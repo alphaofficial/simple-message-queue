@@ -1,4 +1,4 @@
-package api
+package api_test
 
 import (
 	"context"
@@ -10,13 +10,14 @@ import (
 	"testing"
 	"time"
 
+	"sqs-backend/src/api"
 	"sqs-backend/src/storage"
 )
 
 func TestGetQueueAttributes(t *testing.T) {
 	// Setup
 	mockStorage := NewMockStorage()
-	handler := NewSQSHandler(mockStorage, "http://localhost:9324")
+	handler := api.NewSQSHandler(mockStorage, "http://localhost:9324")
 
 	// Create test queue with custom attributes
 	queue := &storage.Queue{
@@ -192,7 +193,7 @@ func TestGetQueueAttributes(t *testing.T) {
 func TestGetQueueAttributesErrors(t *testing.T) {
 	// Setup
 	mockStorage := NewMockStorage()
-	handler := NewSQSHandler(mockStorage, "http://localhost:9324")
+	handler := api.NewSQSHandler(mockStorage, "http://localhost:9324")
 
 	t.Run("missing_queue_url", func(t *testing.T) {
 		formData := url.Values{}
@@ -242,7 +243,7 @@ func TestGetQueueAttributesErrors(t *testing.T) {
 func TestGetQueueAttributesMessageCounting(t *testing.T) {
 	// Setup
 	mockStorage := NewMockStorage()
-	handler := NewSQSHandler(mockStorage, "http://localhost:9324")
+	handler := api.NewSQSHandler(mockStorage, "http://localhost:9324")
 
 	// Create test queue
 	queue := &storage.Queue{

@@ -1,4 +1,4 @@
-package api
+package api_test
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"sqs-backend/src/api"
 	"sqs-backend/src/storage"
 )
 
@@ -55,7 +56,7 @@ func TestReceiveMessageVisibilityTimeoutFixed(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create fresh mock storage for each test
 			mockStorage := NewMockStorage()
-			handler := NewSQSHandler(mockStorage, "http://localhost:9324")
+			handler := api.NewSQSHandler(mockStorage, "http://localhost:9324")
 
 			// Create test queue
 			queue := &storage.Queue{
@@ -120,7 +121,7 @@ func TestReceiveMessageVisibilityTimeoutFixed(t *testing.T) {
 func TestReceiveMessageParameterHandlingFixed(t *testing.T) {
 	// Create fresh mock storage
 	mockStorage := NewMockStorage()
-	handler := NewSQSHandler(mockStorage, "http://localhost:9324")
+	handler := api.NewSQSHandler(mockStorage, "http://localhost:9324")
 
 	// Create test queue
 	queue := &storage.Queue{

@@ -1,4 +1,4 @@
-package api
+package api_test
 
 import (
 	"context"
@@ -10,12 +10,13 @@ import (
 	"testing"
 	"time"
 
+	"sqs-backend/src/api"
 	"sqs-backend/src/storage"
 )
 
 func TestFifoQueueCreation(t *testing.T) {
 	mockStorage := NewMockStorage()
-	handler := NewSQSHandler(mockStorage, "http://localhost")
+	handler := api.NewSQSHandler(mockStorage, "http://localhost")
 
 	tests := []struct {
 		name       string
@@ -116,7 +117,7 @@ func TestFifoQueueCreation(t *testing.T) {
 
 func TestFifoMessageSending(t *testing.T) {
 	mockStorage := NewMockStorage()
-	handler := NewSQSHandler(mockStorage, "http://localhost")
+	handler := api.NewSQSHandler(mockStorage, "http://localhost")
 
 	// Create FIFO queue first
 	fifoQueue := &storage.Queue{
@@ -218,7 +219,7 @@ func TestFifoMessageSending(t *testing.T) {
 
 func TestFifoContentBasedDeduplication(t *testing.T) {
 	mockStorage := NewMockStorage()
-	handler := NewSQSHandler(mockStorage, "http://localhost")
+	handler := api.NewSQSHandler(mockStorage, "http://localhost")
 
 	// Create FIFO queue with ContentBasedDeduplication enabled
 	fifoQueue := &storage.Queue{
@@ -266,7 +267,7 @@ func TestFifoContentBasedDeduplication(t *testing.T) {
 
 func TestFifoMessageOrdering(t *testing.T) {
 	mockStorage := NewMockStorage()
-	handler := NewSQSHandler(mockStorage, "http://localhost")
+	handler := api.NewSQSHandler(mockStorage, "http://localhost")
 
 	// Create FIFO queue
 	fifoQueue := &storage.Queue{
@@ -322,7 +323,7 @@ func TestFifoMessageOrdering(t *testing.T) {
 
 func TestFifoQueueAttributes(t *testing.T) {
 	mockStorage := NewMockStorage()
-	handler := NewSQSHandler(mockStorage, "http://localhost")
+	handler := api.NewSQSHandler(mockStorage, "http://localhost")
 
 	// Create FIFO queue with specific attributes
 	fifoQueue := &storage.Queue{

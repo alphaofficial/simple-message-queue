@@ -1,4 +1,4 @@
-package api
+package api_test
 
 import (
 	"context"
@@ -11,13 +11,14 @@ import (
 	"testing"
 	"time"
 
+	"sqs-backend/src/api"
 	"sqs-backend/src/storage"
 )
 
 func TestSendMessageBatch(t *testing.T) {
 	// Setup
 	mockStorage := NewMockStorage()
-	handler := NewSQSHandler(mockStorage, "http://localhost:9324")
+	handler := api.NewSQSHandler(mockStorage, "http://localhost:9324")
 
 	// Create test queue
 	queue := &storage.Queue{
@@ -149,7 +150,7 @@ func TestSendMessageBatch(t *testing.T) {
 func TestDeleteMessageBatch(t *testing.T) {
 	// Setup
 	mockStorage := NewMockStorage()
-	handler := NewSQSHandler(mockStorage, "http://localhost:9324")
+	handler := api.NewSQSHandler(mockStorage, "http://localhost:9324")
 
 	// Create test queue
 	queue := &storage.Queue{
@@ -241,7 +242,7 @@ func TestDeleteMessageBatch(t *testing.T) {
 func TestChangeMessageVisibilityBatch(t *testing.T) {
 	// Setup
 	mockStorage := NewMockStorage()
-	handler := NewSQSHandler(mockStorage, "http://localhost:9324")
+	handler := api.NewSQSHandler(mockStorage, "http://localhost:9324")
 
 	// Create test queue
 	queue := &storage.Queue{
@@ -317,7 +318,7 @@ func TestChangeMessageVisibilityBatch(t *testing.T) {
 func TestBatchOperationErrors(t *testing.T) {
 	// Setup
 	mockStorage := NewMockStorage()
-	handler := NewSQSHandler(mockStorage, "http://localhost:9324")
+	handler := api.NewSQSHandler(mockStorage, "http://localhost:9324")
 
 	// Create test queue
 	queue := &storage.Queue{

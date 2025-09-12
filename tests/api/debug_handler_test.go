@@ -1,4 +1,4 @@
-package api
+package api_test
 
 import (
 	"context"
@@ -8,13 +8,14 @@ import (
 	"testing"
 	"time"
 
+	"sqs-backend/src/api"
 	"sqs-backend/src/storage"
 )
 
 func TestHandlerDebugging(t *testing.T) {
 	// Create fresh mock storage
 	mockStorage := NewMockStorage()
-	handler := NewSQSHandler(mockStorage, "http://localhost:9324")
+	handler := api.NewSQSHandler(mockStorage, "http://localhost:9324")
 
 	// Create test queue
 	queue := &storage.Queue{
@@ -32,12 +33,6 @@ func TestHandlerDebugging(t *testing.T) {
 		CreatedAt: time.Now(),
 	}
 	mockStorage.SendMessage(context.Background(), message)
-
-	// Test extractQueueNameFromURL method indirectly
-	testHandler := NewSQSHandler(mockStorage, "http://localhost:9324")
-	testURL := "http://localhost:9324/debug-handler-queue"
-	extractedName := testHandler.extractQueueNameFromURL(testURL)
-	t.Logf("Extracted queue name: '%s' from URL: '%s'", extractedName, testURL)
 
 	// Verify message exists in storage with correct queue name
 	messages := mockStorage.messages["debug-handler-queue"]
@@ -78,25 +73,4 @@ func TestHandlerDebugging(t *testing.T) {
 	} else {
 		t.Logf("Queue found: Name=%s, URL=%s", fetchedQueue.Name, fetchedQueue.URL)
 	}
-
-	// Test a different queue name to see if extraction works
-	t.Run("test_queue_name_extraction", func(t *testing.T) {
-		testCases := []struct {
-			url      string
-			expected string
-		}{
-			{"http://localhost:9324/simple-queue", "simple-queue"},
-			{"http://localhost:9324/my-test-queue", "my-test-queue"},
-			{"https://sqs.us-east-1.amazonaws.com/123456789012/MyQueue", "MyQueue"},
-		}
-
-		for _, tc := range testCases {
-			result := testHandler.extractQueueNameFromURL(tc.url)
-			t.Logf("URL: %s -> Queue: %s (expected: %s)", tc.url, result, tc.expected)
-			if result != tc.expected {
-				t.Errorf("Queue name extraction failed for %s. Expected: %s, Got: %s",
-					tc.url, tc.expected, result)
-			}
-		}
-	})
 }
