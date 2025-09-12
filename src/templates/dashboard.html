@@ -567,12 +567,88 @@
             transform: translateY(0);
         }
 
+        /* Message Cards */
+        .message-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            margin-bottom: 12px;
+            overflow: hidden;
+            transition: border-color 0.2s ease;
+        }
+
+        .message-card:hover {
+            border-color: var(--accent-blue);
+        }
+
+        .message-header {
+            padding: 12px 16px;
+            background: var(--bg-tertiary);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .message-id {
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 12px;
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        .message-timestamp {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .message-body {
+            padding: 16px;
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 12px;
+            line-height: 1.4;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            max-height: 200px;
+            overflow-y: auto;
+            cursor: pointer;
+            border-bottom: 1px solid var(--border-color);
+            transition: max-height 0.3s ease;
+        }
+
+        .message-body:hover {
+            background: var(--bg-card);
+        }
+
+        .message-actions {
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--bg-tertiary);
+        }
+
+        .badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .badge-info {
+            background: var(--accent-blue);
+            color: var(--bg-primary);
+        }
+
         @media (max-width: 768px) {
             .main { padding: 12px; }
             .metrics-grid { grid-template-columns: 1fr; }
             .controls { flex-direction: column; align-items: stretch; }
             .control-group { justify-content: center; }
             .form-row { grid-template-columns: 1fr; }
+            .message-body { font-size: 11px; }
         }
     </style>
 </head>
@@ -586,7 +662,7 @@
             </div>
         </div>
     </div>
-    
+
     <div class="main">
         <div class="controls">
             <div class="control-group">
@@ -604,39 +680,39 @@
                 </label>
             </div>
         </div>
-        
+
         <div class="metrics-grid">
             <div class="metric-card">
                 <div class="metric-title">Total Queues</div>
                 <div class="metric-value" id="totalQueues">-</div>
                 <div class="metric-subtitle">Active message queues</div>
             </div>
-            
+
             <div class="metric-card">
                 <div class="metric-title">Messages Available</div>
                 <div class="metric-value" id="totalMessages">-</div>
                 <div class="metric-subtitle">Ready for consumption</div>
             </div>
-            
+
             <div class="metric-card">
                 <div class="metric-title">Messages in Flight</div>
                 <div class="metric-value" id="messagesInFlight">-</div>
                 <div class="metric-subtitle">Currently processing</div>
             </div>
-            
+
             <div class="metric-card">
                 <div class="metric-title">FIFO Queues</div>
                 <div class="metric-value" id="fifoQueues">-</div>
                 <div class="metric-subtitle">Ordered delivery queues</div>
             </div>
         </div>
-        
+
         <div class="tabs">
             <button class="tab active" onclick="switchTab('queues')">🗂️ Queues</button>
             <button class="tab" onclick="switchTab('messages')">💬 Messages</button>
             <button class="tab" onclick="switchTab('send')">📤 Send Message</button>
         </div>
-        
+
         <div id="queues-tab" class="tab-content active">
             <div class="section">
                 <div class="section-header">
@@ -649,7 +725,7 @@
                 </div>
             </div>
         </div>
-        
+
         <div id="messages-tab" class="tab-content">
             <div class="section">
                 <div class="section-header">
@@ -674,7 +750,7 @@
                 </div>
             </div>
         </div>
-        
+
         <div id="send-tab" class="tab-content">
             <div class="section">
                 <div class="section-header">
@@ -688,7 +764,7 @@
                                 <option value="">Select queue...</option>
                             </select>
                         </div>
-                        
+
                         <div id="fifoMessageFields" style="display: none;">
                             <div class="form-row">
                                 <div class="form-group">
@@ -701,10 +777,10 @@
                                 </div>
                             </div>
                         </div>
-                        
+
                         <div class="form-group">
                             <label class="form-label" for="messageBody">Message Body (JSON)</label>
-                            <textarea id="messageBody" class="form-textarea" 
+                            <textarea id="messageBody" class="form-textarea"
                                 placeholder='{"message": "Hello World", "timestamp": "2024-01-01T00:00:00Z"}'
                                 required></textarea>
                         </div>
@@ -716,7 +792,7 @@
             </div>
         </div>
     </div>
-    
+
     <!-- Create Queue Modal -->
     <div id="createQueueModal" class="modal">
         <div class="modal-content">
@@ -727,22 +803,22 @@
             <form onsubmit="createQueue(event)">
                 <div class="form-group">
                     <label class="form-label" for="queueName">Queue Name</label>
-                    <input id="queueName" class="form-input" type="text" required 
+                    <input id="queueName" class="form-input" type="text" required
                            placeholder="my-queue or my-queue.fifo">
                 </div>
-                
+
                 <div class="form-checkbox">
                     <input type="checkbox" id="isFifoQueue" onchange="toggleFifoOptions()">
                     <label for="isFifoQueue">FIFO Queue (First-In-First-Out)</label>
                 </div>
-                
+
                 <div id="fifoOptions" style="display: none;">
                     <div class="form-checkbox">
                         <input type="checkbox" id="contentBasedDeduplication">
                         <label for="contentBasedDeduplication">Content-Based Deduplication</label>
                     </div>
                 </div>
-                
+
                 <div class="form-row">
                     <div class="form-group">
                         <label class="form-label" for="visibilityTimeout">Visibility Timeout (seconds)</label>
@@ -753,7 +829,7 @@
                         <input id="messageRetention" class="form-input" type="number" value="1209600" min="60" max="1209600">
                     </div>
                 </div>
-                
+
                 <div style="display: flex; gap: 12px; margin-top: 20px;">
                     <button type="submit" class="btn">Create Queue</button>
                     <button type="button" class="btn btn-secondary" onclick="hideCreateQueueModal()">Cancel</button>
@@ -761,40 +837,40 @@
             </form>
         </div>
     </div>
-    
+
     <!-- Copy Notification -->
     <div id="copyNotification" class="copy-notification">
         URL copied to clipboard!
     </div>
-    
+
     <script>
         let autoRefreshInterval;
         let currentQueues = [];
-        
+
         // Tab management
         function switchTab(tabName) {
             document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
             event.target.classList.add('active');
-            
+
             document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
             document.getElementById(tabName + '-tab').classList.add('active');
         }
-        
+
         // Queue management
         async function loadQueues() {
             try {
                 const response = await fetch('/api/queues');
                 const data = await response.json();
                 currentQueues = data.queues || [];
-                
+
                 // Update metrics
                 document.getElementById('totalQueues').textContent = currentQueues.length;
                 const fifoCount = currentQueues.filter(q => q.name.endsWith('.fifo')).length;
                 document.getElementById('fifoQueues').textContent = fifoCount;
-                
+
                 updateQueueSelects();
                 displayQueues();
-                
+
             } catch (error) {
                 console.error('Failed to load queues:', error);
                 document.getElementById('queueList').innerHTML = `
@@ -806,7 +882,7 @@
                 `;
             }
         }
-        
+
         function displayQueues() {
             const queueList = document.getElementById('queueList');
             if (currentQueues.length > 0) {
@@ -833,18 +909,6 @@
                             <div class="queue-url" onclick="copyToClipboard('${queue.url}')">
                                 ${queue.url}
                             </div>
-                            <div class="queue-metrics">
-                                <div class="queue-metric">
-                                    <div class="queue-metric-label">Created</div>
-                                    <div class="queue-metric-value">${new Date(queue.createdAt).toLocaleDateString()}</div>
-                                </div>
-                                ${isFifo ? `
-                                <div class="queue-metric">
-                                    <div class="queue-metric-label">Type</div>
-                                    <div class="queue-metric-value">FIFO</div>
-                                </div>
-                                ` : ''}
-                            </div>
                         </div>
                     `;
                 }).join('');
@@ -858,23 +922,23 @@
                 `;
             }
         }
-        
+
         function updateQueueSelects() {
             const messageSelect = document.getElementById('messageQueueSelect');
             const sendSelect = document.getElementById('sendQueueSelect');
-            
-            const options = '<option value="">Select queue...</option>' + 
+
+            const options = '<option value="">Select queue...</option>' +
                 currentQueues.map(queue => `<option value="${queue.name}">${queue.name}</option>`).join('');
-            
+
             messageSelect.innerHTML = options;
             sendSelect.innerHTML = options;
         }
-        
+
         function updateMessageForm() {
             const queueName = document.getElementById('sendQueueSelect').value;
             const fifoFields = document.getElementById('fifoMessageFields');
             const messageGroupId = document.getElementById('messageGroupId');
-            
+
             if (queueName.endsWith('.fifo')) {
                 fifoFields.style.display = 'block';
                 messageGroupId.required = true;
@@ -883,7 +947,7 @@
                 messageGroupId.required = false;
             }
         }
-        
+
         // Copy to clipboard functionality
         async function copyToClipboard(text) {
             try {
@@ -900,7 +964,7 @@
                 showCopyNotification();
             }
         }
-        
+
         function showCopyNotification() {
             const notification = document.getElementById('copyNotification');
             notification.classList.add('show');
@@ -908,12 +972,12 @@
                 notification.classList.remove('show');
             }, 2000);
         }
-        
+
         // Create Queue Modal
         function showCreateQueueModal() {
             document.getElementById('createQueueModal').classList.add('active');
         }
-        
+
         function hideCreateQueueModal() {
             document.getElementById('createQueueModal').classList.remove('active');
             document.getElementById('queueName').value = '';
@@ -923,14 +987,14 @@
             document.getElementById('messageRetention').value = '1209600';
             toggleFifoOptions();
         }
-        
+
         function toggleFifoOptions() {
             const isFifo = document.getElementById('isFifoQueue').checked;
             const fifoOptions = document.getElementById('fifoOptions');
             const queueNameInput = document.getElementById('queueName');
-            
+
             fifoOptions.style.display = isFifo ? 'block' : 'none';
-            
+
             // Auto-append .fifo suffix
             if (isFifo && !queueNameInput.value.endsWith('.fifo')) {
                 queueNameInput.value = queueNameInput.value.replace(/\.fifo$/, '') + '.fifo';
@@ -938,49 +1002,49 @@
                 queueNameInput.value = queueNameInput.value.replace(/\.fifo$/, '');
             }
         }
-        
+
         async function createQueue(event) {
             event.preventDefault();
-            
+
             const queueName = document.getElementById('queueName').value.trim();
             const isFifo = document.getElementById('isFifoQueue').checked;
             const contentBasedDeduplication = document.getElementById('contentBasedDeduplication').checked;
             const visibilityTimeout = document.getElementById('visibilityTimeout').value;
             const messageRetention = document.getElementById('messageRetention').value;
-            
+
             // Validate FIFO queue name
             if (isFifo && !queueName.endsWith('.fifo')) {
                 alert('FIFO queue names must end with .fifo');
                 return;
             }
-            
+
             if (!isFifo && queueName.endsWith('.fifo')) {
                 alert('Standard queue names cannot end with .fifo');
                 return;
             }
-            
+
             try {
                 const attributes = {
                     VisibilityTimeoutSeconds: visibilityTimeout,
                     MessageRetentionPeriod: messageRetention
                 };
-                
+
                 if (isFifo) {
                     attributes.FifoQueue = 'true';
                     if (contentBasedDeduplication) {
                         attributes.ContentBasedDeduplication = 'true';
                     }
                 }
-                
+
                 const response = await fetch('/api/queues', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
+                    body: JSON.stringify({
                         queueName: queueName,
                         attributes: attributes
                     })
                 });
-                
+
                 const data = await response.json();
                 if (data.success) {
                     hideCreateQueueModal();
@@ -988,50 +1052,50 @@
                 } else {
                     alert('Failed to create queue: ' + (data.error || 'Unknown error'));
                 }
-                
+
             } catch (error) {
                 console.error('Failed to create queue:', error);
                 alert('Failed to create queue');
             }
         }
-        
+
         async function deleteQueue(queueName) {
             if (!confirm(`Are you sure you want to delete queue "${queueName}"?`)) {
                 return;
             }
-            
+
             try {
                 const response = await fetch(`/api/queues/${queueName}`, {
                     method: 'DELETE'
                 });
-                
+
                 if (response.ok) {
                     refreshData();
                 } else {
                     alert('Failed to delete queue');
                 }
-                
+
             } catch (error) {
                 console.error('Failed to delete queue:', error);
                 alert('Failed to delete queue');
             }
         }
-        
+
         // Message management
         async function sendMessage(event) {
             event.preventDefault();
-            
+
             const queueName = document.getElementById('sendQueueSelect').value;
             const messageBody = document.getElementById('messageBody').value;
             const messageGroupId = document.getElementById('messageGroupId').value;
             const messageDeduplicationId = document.getElementById('messageDeduplicationId').value;
-            
+
             try {
                 const payload = {
                     queueName: queueName,
                     messageBody: messageBody
                 };
-                
+
                 if (queueName.endsWith('.fifo')) {
                     if (!messageGroupId) {
                         alert('Message Group ID is required for FIFO queues');
@@ -1042,13 +1106,13 @@
                         payload.messageDeduplicationId = messageDeduplicationId;
                     }
                 }
-                
+
                 const response = await fetch('/api/messages/send', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
-                
+
                 const data = await response.json();
                 if (data.success) {
                     document.getElementById('messageBody').value = '';
@@ -1068,17 +1132,17 @@
                 } else {
                     alert('Failed to send message: ' + (data.error || 'Unknown error'));
                 }
-                
+
             } catch (error) {
                 console.error('Failed to send message:', error);
                 alert('Failed to send message');
             }
         }
-        
+
         async function pollMessages() {
             const queueName = document.getElementById('messageQueueSelect').value;
             if (!queueName) return;
-            
+
             try {
                 const response = await fetch('/api/messages/poll', {
                     method: 'POST',
@@ -1089,18 +1153,18 @@
                         waitTimeSeconds: 0
                     })
                 });
-                
+
                 const data = await response.json();
                 displayMessages(data.messages || []);
-                
+
             } catch (error) {
                 console.error('Failed to poll messages:', error);
             }
         }
-        
+
         function displayMessages(messages) {
             const messagesList = document.getElementById('messagesList');
-            
+
             if (messages.length > 0) {
                 messagesList.innerHTML = messages.map(msg => `
                     <div class="message-card">
@@ -1127,16 +1191,25 @@
                 `;
             }
         }
-        
+
         function formatJSON(text) {
             try {
                 const obj = JSON.parse(text);
-                return JSON.stringify(obj, null, 2);
+                let formatted = JSON.stringify(obj, null, 2);
+
+                // Add basic syntax highlighting
+                formatted = formatted
+                    .replace(/("[\w\d_\-\.]+":)/g, '<span style="color: #4fb3d9;">$1</span>')  // Keys
+                    .replace(/: ([\d]+)/g, ': <span style="color: #ce9178;">$1</span>')        // Numbers
+                    .replace(/: (true|false|null)/g, ': <span style="color: #569cd6;">$1</span>') // Booleans/null
+                    .replace(/: (".*?")/g, ': <span style="color: #ce9178;">$1</span>');       // String values
+
+                return `<pre style="margin: 0; color: #cccccc;">${formatted}</pre>`;
             } catch {
-                return text;
+                return `<pre style="margin: 0; color: #cccccc;">${text}</pre>`;
             }
         }
-        
+
         function toggleMessageExpansion(element) {
             if (element.style.maxHeight === 'none') {
                 element.style.maxHeight = '200px';
@@ -1144,10 +1217,10 @@
                 element.style.maxHeight = 'none';
             }
         }
-        
+
         async function deleteMessage(receiptHandle) {
             const queueName = document.getElementById('messageQueueSelect').value;
-            
+
             try {
                 const response = await fetch('/api/messages/delete', {
                     method: 'DELETE',
@@ -1157,42 +1230,42 @@
                         receiptHandle: receiptHandle
                     })
                 });
-                
+
                 const data = await response.json();
                 if (data.success) {
                     pollMessages();
                 }
-                
+
             } catch (error) {
                 console.error('Failed to delete message:', error);
             }
         }
-        
+
         function pollQueueMessages(queueName) {
             switchTab('messages');
             document.getElementById('messageQueueSelect').value = queueName;
             pollMessages();
         }
-        
+
         // Status updates
         async function fetchStatus() {
             try {
                 const response = await fetch('/api/status');
                 const data = await response.json();
-                
+
                 document.getElementById('totalMessages').textContent = data.totalMessages || 0;
                 document.getElementById('messagesInFlight').textContent = data.messagesInFlight || 0;
-                
+
             } catch (error) {
                 console.error('Failed to fetch status:', error);
             }
         }
-        
+
         function refreshData() {
             loadQueues();
             fetchStatus();
         }
-        
+
         function toggleAutoRefresh() {
             const checkbox = document.getElementById('autoRefresh');
             if (checkbox.checked) {
@@ -1201,10 +1274,10 @@
                 clearInterval(autoRefreshInterval);
             }
         }
-        
+
         // Initialize
         refreshData();
-        
+
         // Close modal when clicking outside
         document.getElementById('createQueueModal').addEventListener('click', function(e) {
             if (e.target === this) {
