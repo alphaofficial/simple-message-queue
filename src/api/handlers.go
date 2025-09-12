@@ -3,6 +3,7 @@ package api
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"net/http"
@@ -30,17 +31,22 @@ func NewSQSHandler(storage storage.Storage, baseURL string) *SQSHandler {
 }
 
 func (h *SQSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	fmt.Printf("DEBUG: %s %s\n", r.Method, r.URL.Path)
+
 	// Handle dashboard requests
 	if r.Method == http.MethodGet && r.URL.Path == "/" {
 		h.handleDashboard(w, r)
 		return
 	}
 
-	if r.Method == http.MethodGet && r.URL.Path == "/api/status" {
-		h.handleAPIStatus(w, r)
+	// API endpoints for dashboard
+	if strings.HasPrefix(r.URL.Path, "/api/") {
+		fmt.Printf("DEBUG: Routing to API handler\n")
+		h.handleAPIRoutes(w, r)
 		return
 	}
 
+	// SQS XML API endpoints (original functionality)
 	if r.Method != http.MethodPost {
 		h.writeErrorResponse(w, "InvalidAction", "Only POST method is supported", http.StatusMethodNotAllowed)
 		return
@@ -586,4 +592,272 @@ func (h *SQSHandler) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 	}`, time.Now().Format(time.RFC3339))
 
 	w.Write([]byte(jsonStr))
+}
+
+// handleAPIRoutes handles REST API endpoints for dashboard operations
+func (h *SQSHandler) handleAPIRoutes(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	switch r.URL.Path {
+	case "/api/status":
+		if r.Method == http.MethodGet {
+			h.handleAPIStatus(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	case "/api/queues":
+		if r.Method == http.MethodGet {
+			h.handleAPIListQueues(w, r)
+		} else if r.Method == http.MethodPost {
+			h.handleAPICreateQueue(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	case "/api/messages/poll":
+		if r.Method == http.MethodPost {
+			h.handleAPIPollMessages(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	case "/api/messages/send":
+		if r.Method == http.MethodPost {
+			h.handleAPISendMessage(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	case "/api/messages/delete":
+		if r.Method == http.MethodDelete {
+			h.handleAPIDeleteMessage(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	default:
+		if strings.HasPrefix(r.URL.Path, "/api/queues/") {
+			if strings.HasSuffix(r.URL.Path, "/messages") {
+				if r.Method == http.MethodGet {
+					h.handleAPIGetQueueMessages(w, r)
+				} else {
+					http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				}
+			} else {
+				// Handle individual queue operations like DELETE /api/queues/{name}
+				if r.Method == http.MethodDelete {
+					h.handleAPIDeleteQueue(w, r)
+				} else {
+					http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				}
+			}
+		} else {
+			http.Error(w, "Not found", http.StatusNotFound)
+		}
+	}
+}
+
+// API handlers for dashboard operations
+func (h *SQSHandler) handleAPIListQueues(w http.ResponseWriter, r *http.Request) {
+	queues, err := h.storage.ListQueues(r.Context(), "")
+	if err != nil {
+		http.Error(w, `{"error": "Failed to list queues"}`, http.StatusInternalServerError)
+		return
+	}
+
+	response := `{"queues": [`
+	for i, queue := range queues {
+		if i > 0 {
+			response += ","
+		}
+		response += fmt.Sprintf(`{
+			"name": "%s",
+			"url": "%s/%s",
+			"createdAt": "%s"
+		}`, queue.Name, h.baseURL, queue.Name, queue.CreatedAt.Format(time.RFC3339))
+	}
+	response += `]}`
+
+	w.Write([]byte(response))
+}
+
+func (h *SQSHandler) handleAPICreateQueue(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		QueueName string `json:"queueName"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, `{"error": "Invalid JSON"}`, http.StatusBadRequest)
+		return
+	}
+
+	queue := &storage.Queue{
+		Name:      request.QueueName,
+		CreatedAt: time.Now(),
+	}
+
+	if err := h.storage.CreateQueue(r.Context(), queue); err != nil {
+		http.Error(w, `{"error": "Failed to create queue"}`, http.StatusInternalServerError)
+		return
+	}
+
+	response := fmt.Sprintf(`{
+		"success": true,
+		"queueUrl": "%s/%s"
+	}`, h.baseURL, request.QueueName)
+
+	w.Write([]byte(response))
+}
+
+func (h *SQSHandler) handleAPIPollMessages(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		QueueName   string `json:"queueName"`
+		MaxMessages int    `json:"maxMessages"`
+		WaitTime    int    `json:"waitTimeSeconds"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, `{"error": "Invalid JSON"}`, http.StatusBadRequest)
+		return
+	}
+
+	if request.MaxMessages == 0 {
+		request.MaxMessages = 10
+	}
+
+	messages, err := h.storage.ReceiveMessages(r.Context(), request.QueueName, request.MaxMessages, request.WaitTime)
+	if err != nil {
+		http.Error(w, `{"error": "Failed to poll messages"}`, http.StatusInternalServerError)
+		return
+	}
+
+	response := `{"messages": [`
+	for i, msg := range messages {
+		if i > 0 {
+			response += ","
+		}
+		response += fmt.Sprintf(`{
+			"id": "%s",
+			"receiptHandle": "%s",
+			"body": %s,
+			"attributes": {
+				"SentTimestamp": "%d",
+				"ApproximateReceiveCount": "%d"
+			},
+			"md5OfBody": "%s"
+		}`, msg.ID, msg.ReceiptHandle, strconv.Quote(msg.Body),
+			msg.CreatedAt.UnixMilli(), msg.ReceiveCount, msg.MD5OfBody)
+	}
+	response += `]}`
+
+	w.Write([]byte(response))
+}
+
+func (h *SQSHandler) handleAPISendMessage(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		QueueName string `json:"queueName"`
+		Body      string `json:"messageBody"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, `{"error": "Invalid JSON"}`, http.StatusBadRequest)
+		return
+	}
+
+	message := &storage.Message{
+		ID:        uuid.New().String(),
+		QueueName: request.QueueName,
+		Body:      request.Body,
+		CreatedAt: time.Now(),
+	}
+
+	hasher := md5.New()
+	hasher.Write([]byte(request.Body))
+	message.MD5OfBody = hex.EncodeToString(hasher.Sum(nil))
+
+	if err := h.storage.SendMessage(r.Context(), message); err != nil {
+		http.Error(w, `{"error": "Failed to send message"}`, http.StatusInternalServerError)
+		return
+	}
+
+	response := fmt.Sprintf(`{
+		"success": true,
+		"messageId": "%s",
+		"md5OfBody": "%s"
+	}`, message.ID, message.MD5OfBody)
+
+	w.Write([]byte(response))
+}
+
+func (h *SQSHandler) handleAPIDeleteMessage(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		QueueName     string `json:"queueName"`
+		ReceiptHandle string `json:"receiptHandle"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, `{"error": "Invalid JSON"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := h.storage.DeleteMessage(r.Context(), request.QueueName, request.ReceiptHandle); err != nil {
+		http.Error(w, `{"error": "Failed to delete message"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Write([]byte(`{"success": true}`))
+}
+
+func (h *SQSHandler) handleAPIDeleteQueue(w http.ResponseWriter, r *http.Request) {
+	// Extract queue name from path like /api/queues/my-queue
+	pathParts := strings.Split(r.URL.Path, "/")
+	if len(pathParts) != 4 {
+		http.Error(w, `{"error": "Invalid path"}`, http.StatusBadRequest)
+		return
+	}
+	queueName := pathParts[3]
+
+	if err := h.storage.DeleteQueue(r.Context(), queueName); err != nil {
+		http.Error(w, `{"error": "Failed to delete queue"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Write([]byte(`{"success": true}`))
+}
+
+func (h *SQSHandler) handleAPIGetQueueMessages(w http.ResponseWriter, r *http.Request) {
+	// Extract queue name from path like /api/queues/my-queue/messages
+	pathParts := strings.Split(r.URL.Path, "/")
+	if len(pathParts) != 5 {
+		http.Error(w, `{"error": "Invalid path"}`, http.StatusBadRequest)
+		return
+	}
+	queueName := pathParts[3]
+
+	messages, err := h.storage.GetInFlightMessages(r.Context(), queueName)
+	if err != nil {
+		http.Error(w, `{"error": "Failed to get messages"}`, http.StatusInternalServerError)
+		return
+	}
+
+	response := `{"messages": [`
+	for i, msg := range messages {
+		if i > 0 {
+			response += ","
+		}
+		response += fmt.Sprintf(`{
+			"id": "%s",
+			"body": %s,
+			"sentTimestamp": "%s",
+			"receiveCount": %d
+		}`, msg.ID, strconv.Quote(msg.Body),
+			msg.CreatedAt.Format(time.RFC3339), msg.ReceiveCount)
+	}
+	response += `]}`
+
+	w.Write([]byte(response))
 }
