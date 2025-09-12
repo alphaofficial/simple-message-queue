@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 
-	storage "github.com/sqs-producer/sqs-server/internal/storage/interface"
+	storage "github.com/sqs-producer/sqs-server/src/storage"
 )
 
 type SQLiteStorage struct {

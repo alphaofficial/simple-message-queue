@@ -171,3 +171,5 @@ MIT License
 
 
 go build -o sqs-server ./cmd/server
+
+lsof -ti :8080 | xargs kill -9
