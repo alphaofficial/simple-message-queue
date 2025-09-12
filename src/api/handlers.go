@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
@@ -70,12 +71,18 @@ func (h *SQSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleGetQueueUrl(w, r)
 	case "SendMessage":
 		h.handleSendMessage(w, r)
+	case "SendMessageBatch":
+		h.handleSendMessageBatch(w, r)
 	case "ReceiveMessage":
 		h.handleReceiveMessage(w, r)
 	case "DeleteMessage":
 		h.handleDeleteMessage(w, r)
+	case "DeleteMessageBatch":
+		h.handleDeleteMessageBatch(w, r)
 	case "ChangeMessageVisibility":
 		h.handleChangeMessageVisibility(w, r)
+	case "ChangeMessageVisibilityBatch":
+		h.handleChangeMessageVisibilityBatch(w, r)
 	case "GetQueueAttributes":
 		h.handleGetQueueAttributes(w, r)
 	case "SetQueueAttributes":
@@ -133,8 +140,30 @@ func (h *SQSHandler) handleCreateQueue(w http.ResponseWriter, r *http.Request) {
 			queue.MaxReceiveCount = count
 		}
 	}
+	if val, ok := attributes["DelaySeconds"]; ok {
+		if delay, err := strconv.Atoi(val); err == nil {
+			queue.DelaySeconds = delay
+		}
+	}
 	if val, ok := attributes["RedrivePolicy"]; ok {
 		queue.RedrivePolicy = val
+	}
+
+	// Parse FIFO-specific attributes
+	if val, ok := attributes["ContentBasedDeduplication"]; ok {
+		queue.ContentBasedDeduplication = (val == "true")
+	}
+	if val, ok := attributes["DeduplicationScope"]; ok {
+		queue.DeduplicationScope = val
+	}
+	if val, ok := attributes["FifoThroughputLimit"]; ok {
+		queue.FifoThroughputLimit = val
+	}
+
+	// Setup FIFO queue configuration
+	if err := SetupFifoQueue(queue); err != nil {
+		h.writeErrorResponse(w, "InvalidParameterValue", err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	if err := h.storage.CreateQueue(r.Context(), queue); err != nil {
@@ -277,6 +306,48 @@ func (h *SQSHandler) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Handle FIFO queue parameters
+	message.MessageGroupId = r.FormValue("MessageGroupId")
+	message.MessageDeduplicationId = r.FormValue("MessageDeduplicationId")
+
+	// Validate FIFO message requirements
+	if err := ValidateFifoMessage(message, queue); err != nil {
+		h.writeErrorResponse(w, "InvalidParameterValue", err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Prepare FIFO message (sequence numbers, deduplication, etc.)
+	if err := PrepareFifoMessage(message, queue); err != nil {
+		h.writeErrorResponse(w, "InternalError", err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Check for duplicate message (FIFO queues only)
+	if queue.FifoQueue && message.DeduplicationHash != "" {
+		isDuplicate, err := CheckForDuplicateMessage(r.Context(), h.storage, queueName, message.DeduplicationHash)
+		if err != nil {
+			h.writeErrorResponse(w, "InternalError", "Failed to check for duplicates", http.StatusInternalServerError)
+			return
+		}
+
+		if isDuplicate {
+			// AWS returns success but doesn't actually send the message for duplicates
+			// We still return the response as if the message was sent
+			h.writeXMLResponse(w, SendMessageResponse{
+				MessageId:              message.ID,
+				MD5OfBody:              message.MD5OfBody,
+				MD5OfMessageAttributes: message.MD5OfAttributes,
+				MessageDeduplicationId: message.MessageDeduplicationId,
+				MessageGroupId:         message.MessageGroupId,
+				SequenceNumber:         message.SequenceNumber,
+				SQSResponse: SQSResponse{
+					RequestId: uuid.New().String(),
+				},
+			}, http.StatusOK)
+			return
+		}
+	}
+
 	if err := h.storage.SendMessage(r.Context(), message); err != nil {
 		h.writeErrorResponse(w, "InternalError", "Failed to send message", http.StatusInternalServerError)
 		return
@@ -286,6 +357,9 @@ func (h *SQSHandler) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		MessageId:              message.ID,
 		MD5OfBody:              message.MD5OfBody,
 		MD5OfMessageAttributes: message.MD5OfAttributes,
+		MessageDeduplicationId: message.MessageDeduplicationId,
+		MessageGroupId:         message.MessageGroupId,
+		SequenceNumber:         message.SequenceNumber,
 		SQSResponse: SQSResponse{
 			RequestId: uuid.New().String(),
 		},
@@ -312,7 +386,15 @@ func (h *SQSHandler) handleReceiveMessage(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	messages, err := h.storage.ReceiveMessages(r.Context(), queueName, maxMessages, waitTimeSeconds)
+	// Parse VisibilityTimeout parameter
+	visibilityTimeout := 0 // 0 means use queue default
+	if visStr := r.FormValue("VisibilityTimeout"); visStr != "" {
+		if vis, err := strconv.Atoi(visStr); err == nil && vis >= 0 && vis <= 43200 { // AWS max is 12 hours
+			visibilityTimeout = vis
+		}
+	}
+
+	messages, err := h.storage.ReceiveMessages(r.Context(), queueName, maxMessages, waitTimeSeconds, visibilityTimeout)
 	if err != nil {
 		h.writeErrorResponse(w, "InternalError", "Failed to receive messages", http.StatusInternalServerError)
 		return
@@ -321,12 +403,15 @@ func (h *SQSHandler) handleReceiveMessage(w http.ResponseWriter, r *http.Request
 	var responseMessages []Message
 	for _, msg := range messages {
 		responseMessages = append(responseMessages, Message{
-			MessageId:         msg.ID,
-			ReceiptHandle:     msg.ReceiptHandle,
-			MD5OfBody:         msg.MD5OfBody,
-			Body:              msg.Body,
-			Attributes:        msg.Attributes,
-			MessageAttributes: convertMessageAttributes(msg.MessageAttributes),
+			MessageId:              msg.ID,
+			ReceiptHandle:          msg.ReceiptHandle,
+			MD5OfBody:              msg.MD5OfBody,
+			Body:                   msg.Body,
+			Attributes:             convertAttributes(msg.Attributes),
+			MessageAttributes:      convertMessageAttributesToSlice(msg.MessageAttributes),
+			MessageGroupId:         msg.MessageGroupId,
+			MessageDeduplicationId: msg.MessageDeduplicationId,
+			SequenceNumber:         msg.SequenceNumber,
 		})
 	}
 
@@ -391,14 +476,229 @@ func (h *SQSHandler) handleChangeMessageVisibility(w http.ResponseWriter, r *htt
 }
 
 func (h *SQSHandler) handleGetQueueAttributes(w http.ResponseWriter, r *http.Request) {
-	// Simplified implementation - would need to be expanded
-	response := SQSResponse{
-		RequestId: uuid.New().String(),
+	queueURL := r.FormValue("QueueUrl")
+	queueName := h.extractQueueNameFromURL(queueURL)
+
+	if queueName == "" {
+		h.writeErrorResponse(w, "MissingParameter", "QueueUrl is required", http.StatusBadRequest)
+		return
 	}
 
-	w.Header().Set("Content-Type", "application/xml")
-	w.WriteHeader(http.StatusOK)
-	xml.NewEncoder(w).Encode(response)
+	// Get queue information
+	queue, err := h.storage.GetQueue(r.Context(), queueName)
+	if err != nil || queue == nil {
+		h.writeErrorResponse(w, "QueueDoesNotExist", "Queue does not exist", http.StatusBadRequest)
+		return
+	}
+
+	// Parse requested attributes (AttributeName.1, AttributeName.2, etc.)
+	var requestedAttributes []string
+	attributeIndex := 1
+	for {
+		attrKey := fmt.Sprintf("AttributeName.%d", attributeIndex)
+		attrName := r.FormValue(attrKey)
+		if attrName == "" {
+			break
+		}
+		requestedAttributes = append(requestedAttributes, attrName)
+		attributeIndex++
+	}
+
+	// If no specific attributes requested, default to "All"
+	if len(requestedAttributes) == 0 {
+		requestedAttributes = []string{"All"}
+	}
+
+	// Generate attributes
+	attributes, err := h.generateQueueAttributes(r.Context(), queue, requestedAttributes)
+	if err != nil {
+		h.writeErrorResponse(w, "InternalError", "Failed to generate queue attributes", http.StatusInternalServerError)
+		return
+	}
+
+	response := GetQueueAttributesResponse{
+		Attributes: attributes,
+		SQSResponse: SQSResponse{
+			RequestId: uuid.New().String(),
+		},
+	}
+
+	h.writeXMLResponse(w, response, http.StatusOK)
+}
+
+func (h *SQSHandler) generateQueueAttributes(ctx context.Context, queue *storage.Queue, requestedAttrs []string) ([]QueueAttribute, error) {
+	var attributes []QueueAttribute
+
+	// Check if "All" is requested
+	includeAll := false
+	attrSet := make(map[string]bool)
+	for _, attr := range requestedAttrs {
+		if attr == "All" {
+			includeAll = true
+		}
+		attrSet[attr] = true
+	}
+
+	shouldInclude := func(attrName string) bool {
+		return includeAll || attrSet[attrName]
+	}
+
+	// Get live message counts
+	allMessages, err := h.storage.GetInFlightMessages(ctx, queue.Name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get messages for metrics: %w", err)
+	}
+
+	now := time.Now()
+	var availableCount, inFlightCount, delayedCount int
+
+	for _, msg := range allMessages {
+		// Check if message is delayed
+		if msg.DelaySeconds > 0 {
+			delayTime := msg.CreatedAt.Add(time.Duration(msg.DelaySeconds) * time.Second)
+			if now.Before(delayTime) {
+				delayedCount++
+				continue
+			}
+		}
+
+		// Check if message is in flight (invisible)
+		if msg.VisibleAt != nil && now.Before(*msg.VisibleAt) {
+			inFlightCount++
+		} else {
+			availableCount++
+		}
+	}
+
+	// Core operational attributes
+	if shouldInclude("VisibilityTimeout") {
+		attributes = append(attributes, QueueAttribute{
+			Name:  "VisibilityTimeout",
+			Value: strconv.Itoa(queue.VisibilityTimeoutSeconds),
+		})
+	}
+
+	if shouldInclude("MaximumMessageSize") {
+		attributes = append(attributes, QueueAttribute{
+			Name:  "MaximumMessageSize",
+			Value: "262144", // AWS default: 256 KB
+		})
+	}
+
+	if shouldInclude("MessageRetentionPeriod") {
+		attributes = append(attributes, QueueAttribute{
+			Name:  "MessageRetentionPeriod",
+			Value: strconv.Itoa(queue.MessageRetentionPeriod),
+		})
+	}
+
+	if shouldInclude("DelaySeconds") {
+		attributes = append(attributes, QueueAttribute{
+			Name:  "DelaySeconds",
+			Value: strconv.Itoa(queue.DelaySeconds),
+		})
+	}
+
+	if shouldInclude("ReceiveMessageWaitTimeSeconds") {
+		attributes = append(attributes, QueueAttribute{
+			Name:  "ReceiveMessageWaitTimeSeconds",
+			Value: strconv.Itoa(queue.ReceiveMessageWaitTimeSeconds),
+		})
+	}
+
+	// Live message count attributes
+	if shouldInclude("ApproximateNumberOfMessages") {
+		attributes = append(attributes, QueueAttribute{
+			Name:  "ApproximateNumberOfMessages",
+			Value: strconv.Itoa(availableCount),
+		})
+	}
+
+	if shouldInclude("ApproximateNumberOfMessagesNotVisible") {
+		attributes = append(attributes, QueueAttribute{
+			Name:  "ApproximateNumberOfMessagesNotVisible",
+			Value: strconv.Itoa(inFlightCount),
+		})
+	}
+
+	if shouldInclude("ApproximateNumberOfMessagesDelayed") {
+		attributes = append(attributes, QueueAttribute{
+			Name:  "ApproximateNumberOfMessagesDelayed",
+			Value: strconv.Itoa(delayedCount),
+		})
+	}
+
+	// Metadata attributes
+	if shouldInclude("CreatedTimestamp") {
+		attributes = append(attributes, QueueAttribute{
+			Name:  "CreatedTimestamp",
+			Value: strconv.FormatInt(queue.CreatedAt.Unix(), 10),
+		})
+	}
+
+	if shouldInclude("LastModifiedTimestamp") {
+		attributes = append(attributes, QueueAttribute{
+			Name:  "LastModifiedTimestamp",
+			Value: strconv.FormatInt(queue.CreatedAt.Unix(), 10), // For now, same as created
+		})
+	}
+
+	if shouldInclude("QueueArn") {
+		// Generate ARN format: arn:aws:sqs:region:account:queuename
+		// For local testing, use fake values
+		arn := fmt.Sprintf("arn:aws:sqs:us-east-1:123456789012:%s", queue.Name)
+		attributes = append(attributes, QueueAttribute{
+			Name:  "QueueArn",
+			Value: arn,
+		})
+	}
+
+	// DLQ attributes
+	if shouldInclude("RedrivePolicy") && queue.RedrivePolicy != "" {
+		attributes = append(attributes, QueueAttribute{
+			Name:  "RedrivePolicy",
+			Value: queue.RedrivePolicy,
+		})
+	}
+
+	// Encryption attributes (basic support)
+	if shouldInclude("SqsManagedSseEnabled") {
+		attributes = append(attributes, QueueAttribute{
+			Name:  "SqsManagedSseEnabled",
+			Value: "false", // Default to false for now
+		})
+	}
+
+	// FIFO-specific attributes
+	if shouldInclude("FifoQueue") {
+		attributes = append(attributes, QueueAttribute{
+			Name:  "FifoQueue",
+			Value: strconv.FormatBool(queue.FifoQueue),
+		})
+	}
+
+	if shouldInclude("ContentBasedDeduplication") && queue.FifoQueue {
+		attributes = append(attributes, QueueAttribute{
+			Name:  "ContentBasedDeduplication",
+			Value: strconv.FormatBool(queue.ContentBasedDeduplication),
+		})
+	}
+
+	if shouldInclude("DeduplicationScope") && queue.FifoQueue {
+		attributes = append(attributes, QueueAttribute{
+			Name:  "DeduplicationScope",
+			Value: queue.DeduplicationScope,
+		})
+	}
+
+	if shouldInclude("FifoThroughputLimit") && queue.FifoQueue {
+		attributes = append(attributes, QueueAttribute{
+			Name:  "FifoThroughputLimit",
+			Value: queue.FifoThroughputLimit,
+		})
+	}
+
+	return attributes, nil
 }
 
 func (h *SQSHandler) handleSetQueueAttributes(w http.ResponseWriter, r *http.Request) {
@@ -428,6 +728,211 @@ func (h *SQSHandler) handlePurgeQueue(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/xml")
 	w.WriteHeader(http.StatusOK)
 	xml.NewEncoder(w).Encode(response)
+}
+
+func (h *SQSHandler) handleSendMessageBatch(w http.ResponseWriter, r *http.Request) {
+	queueURL := r.FormValue("QueueUrl")
+	queueName := h.extractQueueNameFromURL(queueURL)
+
+	// Parse batch entries
+	var messages []*storage.Message
+	var entries []BatchEntry
+
+	// Parse entries from form data (Entry.1.Id, Entry.1.MessageBody, etc.)
+	entryIndex := 1
+	for {
+		idKey := fmt.Sprintf("Entry.%d.Id", entryIndex)
+		bodyKey := fmt.Sprintf("Entry.%d.MessageBody", entryIndex)
+
+		id := r.FormValue(idKey)
+		body := r.FormValue(bodyKey)
+
+		if id == "" || body == "" {
+			break
+		}
+
+		// Create message
+		message := &storage.Message{
+			ID:                uuid.New().String(),
+			QueueName:         queueName,
+			Body:              body,
+			Attributes:        make(map[string]string),
+			MessageAttributes: make(map[string]storage.MessageAttribute),
+			ReceiptHandle:     uuid.New().String(),
+			ReceiveCount:      0,
+			CreatedAt:         time.Now(),
+			DelaySeconds:      0,
+		}
+
+		// Calculate MD5
+		hash := md5.Sum([]byte(body))
+		message.MD5OfBody = hex.EncodeToString(hash[:])
+
+		// Parse DelaySeconds if provided
+		delayKey := fmt.Sprintf("Entry.%d.DelaySeconds", entryIndex)
+		if delayStr := r.FormValue(delayKey); delayStr != "" {
+			if delay, err := strconv.Atoi(delayStr); err == nil {
+				message.DelaySeconds = delay
+			}
+		}
+
+		messages = append(messages, message)
+		entries = append(entries, BatchEntry{
+			Id:        id,
+			MessageId: message.ID,
+			MD5OfBody: message.MD5OfBody,
+		})
+
+		entryIndex++
+
+		// AWS limit is 10 messages per batch
+		if entryIndex > 10 {
+			break
+		}
+	}
+
+	if len(messages) == 0 {
+		h.writeErrorResponse(w, "MissingParameter", "No valid batch entries found", http.StatusBadRequest)
+		return
+	}
+
+	// Send messages using batch operation
+	if err := h.storage.SendMessageBatch(r.Context(), messages); err != nil {
+		h.writeErrorResponse(w, "InternalError", "Failed to send message batch", http.StatusInternalServerError)
+		return
+	}
+
+	response := SendMessageBatchResponse{
+		Successful: entries,
+		SQSResponse: SQSResponse{
+			RequestId: uuid.New().String(),
+		},
+	}
+
+	h.writeXMLResponse(w, response, http.StatusOK)
+}
+
+func (h *SQSHandler) handleDeleteMessageBatch(w http.ResponseWriter, r *http.Request) {
+	queueURL := r.FormValue("QueueUrl")
+	queueName := h.extractQueueNameFromURL(queueURL)
+
+	// Parse batch entries
+	var receiptHandles []string
+	var entries []DeleteBatchEntry
+
+	// Parse entries from form data (Entry.1.Id, Entry.1.ReceiptHandle, etc.)
+	entryIndex := 1
+	for {
+		idKey := fmt.Sprintf("Entry.%d.Id", entryIndex)
+		handleKey := fmt.Sprintf("Entry.%d.ReceiptHandle", entryIndex)
+
+		id := r.FormValue(idKey)
+		handle := r.FormValue(handleKey)
+
+		if id == "" || handle == "" {
+			break
+		}
+
+		receiptHandles = append(receiptHandles, handle)
+		entries = append(entries, DeleteBatchEntry{
+			Id: id,
+		})
+
+		entryIndex++
+
+		// AWS limit is 10 messages per batch
+		if entryIndex > 10 {
+			break
+		}
+	}
+
+	if len(receiptHandles) == 0 {
+		h.writeErrorResponse(w, "MissingParameter", "No valid batch entries found", http.StatusBadRequest)
+		return
+	}
+
+	// Delete messages using batch operation
+	if err := h.storage.DeleteMessageBatch(r.Context(), queueName, receiptHandles); err != nil {
+		h.writeErrorResponse(w, "InternalError", "Failed to delete message batch", http.StatusInternalServerError)
+		return
+	}
+
+	response := DeleteMessageBatchResponse{
+		Successful: entries,
+		SQSResponse: SQSResponse{
+			RequestId: uuid.New().String(),
+		},
+	}
+
+	h.writeXMLResponse(w, response, http.StatusOK)
+}
+
+func (h *SQSHandler) handleChangeMessageVisibilityBatch(w http.ResponseWriter, r *http.Request) {
+	queueURL := r.FormValue("QueueUrl")
+	queueName := h.extractQueueNameFromURL(queueURL)
+
+	// Parse batch entries
+	var visibilityEntries []storage.VisibilityEntry
+	var responseEntries []VisibilityBatchEntry
+
+	// Parse entries from form data
+	entryIndex := 1
+	for {
+		idKey := fmt.Sprintf("Entry.%d.Id", entryIndex)
+		handleKey := fmt.Sprintf("Entry.%d.ReceiptHandle", entryIndex)
+		visibilityKey := fmt.Sprintf("Entry.%d.VisibilityTimeout", entryIndex)
+
+		id := r.FormValue(idKey)
+		handle := r.FormValue(handleKey)
+		visibilityStr := r.FormValue(visibilityKey)
+
+		if id == "" || handle == "" || visibilityStr == "" {
+			break
+		}
+
+		visibilityTimeout, err := strconv.Atoi(visibilityStr)
+		if err != nil {
+			// Invalid visibility timeout - could add to failed entries
+			entryIndex++
+			continue
+		}
+
+		visibilityEntries = append(visibilityEntries, storage.VisibilityEntry{
+			ReceiptHandle:     handle,
+			VisibilityTimeout: visibilityTimeout,
+		})
+
+		responseEntries = append(responseEntries, VisibilityBatchEntry{
+			Id: id,
+		})
+
+		entryIndex++
+
+		// AWS limit is 10 messages per batch
+		if entryIndex > 10 {
+			break
+		}
+	}
+
+	if len(visibilityEntries) == 0 {
+		h.writeErrorResponse(w, "MissingParameter", "No valid batch entries found", http.StatusBadRequest)
+		return
+	}
+
+	// Update visibility using batch operation
+	if err := h.storage.ChangeMessageVisibilityBatch(r.Context(), queueName, visibilityEntries); err != nil {
+		h.writeErrorResponse(w, "InternalError", "Failed to change message visibility batch", http.StatusInternalServerError)
+		return
+	}
+
+	response := ChangeMessageVisibilityBatchResponse{
+		Successful: responseEntries,
+		SQSResponse: SQSResponse{
+			RequestId: uuid.New().String(),
+		},
+	}
+
+	h.writeXMLResponse(w, response, http.StatusOK)
 }
 
 func (h *SQSHandler) extractQueueNameFromURL(queueURL string) string {
@@ -479,6 +984,29 @@ func convertMessageAttributes(attrs map[string]storage.MessageAttribute) map[str
 			StringValue: v.StringValue,
 			BinaryValue: v.BinaryValue,
 		}
+	}
+	return result
+}
+
+func convertAttributes(attrs map[string]string) []Attribute {
+	var result []Attribute
+	for k, v := range attrs {
+		result = append(result, Attribute{
+			Name:  k,
+			Value: v,
+		})
+	}
+	return result
+}
+
+func convertMessageAttributesToSlice(attrs map[string]storage.MessageAttribute) []MessageAttributeValue {
+	var result []MessageAttributeValue
+	for k, v := range attrs {
+		result = append(result, MessageAttributeValue{
+			Name:        k,
+			StringValue: v.StringValue,
+			DataType:    v.DataType,
+		})
 	}
 	return result
 }
@@ -729,7 +1257,7 @@ func (h *SQSHandler) handleAPIPollMessages(w http.ResponseWriter, r *http.Reques
 		request.MaxMessages = 10
 	}
 
-	messages, err := h.storage.ReceiveMessages(r.Context(), request.QueueName, request.MaxMessages, request.WaitTime)
+	messages, err := h.storage.ReceiveMessages(r.Context(), request.QueueName, request.MaxMessages, request.WaitTime, 0) // Use queue default visibility timeout
 	if err != nil {
 		http.Error(w, `{"error": "Failed to poll messages"}`, http.StatusInternalServerError)
 		return

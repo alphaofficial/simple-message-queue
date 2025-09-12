@@ -67,16 +67,36 @@ type SendMessageResponse struct {
 	MessageId              string   `xml:"SendMessageResult>MessageId"`
 	MD5OfBody              string   `xml:"SendMessageResult>MD5OfBody"`
 	MD5OfMessageAttributes string   `xml:"SendMessageResult>MD5OfMessageAttributes"`
+	// FIFO fields (only included for FIFO queues)
+	MessageDeduplicationId string `xml:"SendMessageResult>MessageDeduplicationId,omitempty"`
+	MessageGroupId         string `xml:"SendMessageResult>MessageGroupId,omitempty"`
+	SequenceNumber         string `xml:"SendMessageResult>SequenceNumber,omitempty"`
 	SQSResponse
 }
 
 type Message struct {
-	MessageId         string                      `xml:"MessageId"`
-	ReceiptHandle     string                      `xml:"ReceiptHandle"`
-	MD5OfBody         string                      `xml:"MD5OfBody"`
-	Body              string                      `xml:"Body"`
-	Attributes        map[string]string           `xml:"Attribute"`
-	MessageAttributes map[string]MessageAttribute `xml:"MessageAttribute"`
+	MessageId         string                  `xml:"MessageId"`
+	ReceiptHandle     string                  `xml:"ReceiptHandle"`
+	MD5OfBody         string                  `xml:"MD5OfBody"`
+	Body              string                  `xml:"Body"`
+	Attributes        []Attribute             `xml:"Attribute"`
+	MessageAttributes []MessageAttributeValue `xml:"MessageAttribute"`
+
+	// FIFO-specific fields (only included in response for FIFO queues)
+	MessageGroupId         string `xml:"MessageGroupId,omitempty"`
+	MessageDeduplicationId string `xml:"MessageDeduplicationId,omitempty"`
+	SequenceNumber         string `xml:"SequenceNumber,omitempty"`
+}
+
+type Attribute struct {
+	Name  string `xml:"Name"`
+	Value string `xml:"Value"`
+}
+
+type MessageAttributeValue struct {
+	Name        string `xml:"Name"`
+	StringValue string `xml:"Value>StringValue,omitempty"`
+	DataType    string `xml:"Value>DataType"`
 }
 
 type ReceiveMessageResponse struct {
@@ -106,4 +126,51 @@ type Error struct {
 	Type    string `xml:"Type"`
 	Code    string `xml:"Code"`
 	Message string `xml:"Message"`
+}
+
+// Batch operation types
+type BatchEntry struct {
+	Id        string `xml:"Id"`
+	MessageId string `xml:"MessageId"`
+	MD5OfBody string `xml:"MD5OfBody"`
+}
+
+type DeleteBatchEntry struct {
+	Id string `xml:"Id"`
+}
+
+type VisibilityBatchEntry struct {
+	Id string `xml:"Id"`
+}
+
+type SendMessageBatchResponse struct {
+	XMLName    xml.Name     `xml:"SendMessageBatchResponse"`
+	Successful []BatchEntry `xml:"SendMessageBatchResult>SendMessageBatchResultEntry"`
+	Failed     []BatchEntry `xml:"SendMessageBatchResult>BatchResultErrorEntry"`
+	SQSResponse
+}
+
+type DeleteMessageBatchResponse struct {
+	XMLName    xml.Name           `xml:"DeleteMessageBatchResponse"`
+	Successful []DeleteBatchEntry `xml:"DeleteMessageBatchResult>DeleteMessageBatchResultEntry"`
+	Failed     []DeleteBatchEntry `xml:"DeleteMessageBatchResult>BatchResultErrorEntry"`
+	SQSResponse
+}
+
+type ChangeMessageVisibilityBatchResponse struct {
+	XMLName    xml.Name               `xml:"ChangeMessageVisibilityBatchResponse"`
+	Successful []VisibilityBatchEntry `xml:"ChangeMessageVisibilityBatchResult>ChangeMessageVisibilityBatchResultEntry"`
+	Failed     []VisibilityBatchEntry `xml:"ChangeMessageVisibilityBatchResult>BatchResultErrorEntry"`
+	SQSResponse
+}
+
+type QueueAttribute struct {
+	Name  string `xml:"Name"`
+	Value string `xml:"Value"`
+}
+
+type GetQueueAttributesResponse struct {
+	XMLName    xml.Name         `xml:"GetQueueAttributesResponse"`
+	Attributes []QueueAttribute `xml:"GetQueueAttributesResult>Attribute"`
+	SQSResponse
 }
