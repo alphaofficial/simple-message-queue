@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"time"
 
-	"sqs-producer/src/api"
-	"sqs-producer/src/storage/sqlite"
+	"sqs-backend/src/api"
+	"sqs-backend/src/storage/sqlite"
 )
 
 func main() {

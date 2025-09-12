@@ -1,4 +1,4 @@
-module sqs-producer
+module sqs-backend
 
 go 1.21.5
 

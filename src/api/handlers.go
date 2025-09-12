@@ -15,7 +15,7 @@ import (
 
 	"github.com/google/uuid"
 
-	storage "sqs-producer/src/storage"
+	storage "sqs-backend/src/storage"
 )
 
 type SQSHandler struct {
