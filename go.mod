@@ -1,4 +1,4 @@
-module github.com/sqs-producer/sqs-server
+module sqs-producer
 
 go 1.21.5
 

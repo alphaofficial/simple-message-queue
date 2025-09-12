@@ -14,7 +14,7 @@ import (
 
 	"github.com/google/uuid"
 
-	storage "github.com/sqs-producer/sqs-server/src/storage"
+	storage "sqs-producer/src/storage"
 )
 
 type SQSHandler struct {
@@ -482,7 +482,7 @@ func (h *SQSHandler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	// Read the dashboard HTML template
-	html, err := os.ReadFile("templates/dashboard.html")
+	html, err := os.ReadFile("src/templates/dashboard.html")
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte("Error loading dashboard template"))

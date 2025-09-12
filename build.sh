@@ -1,4 +1,4 @@
 #!/bin/bash
-# Build the SQS server with Go workspace disabled
-env GOWORK=off go build -o sqs-server server.go
+# Build the SQS server
+go build -o sqs-server main.go
 echo "Build complete: sqs-server"
