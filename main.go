@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"sqs-bridge/src/api"
 	"sqs-bridge/src/config"
 	"sqs-bridge/src/storage"
@@ -54,13 +55,13 @@ func main() {
 	// Initialize SQS handler
 	sqsHandler := api.NewSQSHandler(storageInstance, cfg.BaseURL)
 
-	// Setup HTTP server
-	mux := http.NewServeMux()
-	mux.Handle("/", sqsHandler)
+	// Setup Gin router
+	router := gin.New()
+	sqsHandler.SetupRoutes(router)
 
 	server := &http.Server{
 		Addr:    ":" + cfg.Port,
-		Handler: mux,
+		Handler: router,
 	}
 
 	// Start server in goroutine

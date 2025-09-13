@@ -4,10 +4,118 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	"github.com/gin-contrib/cors"
+	"github.com/gin-gonic/gin"
 )
 
-// ServeHTTP implements the http.Handler interface and routes requests to appropriate handlers
+// SetupRoutes configures all routes for the Gin router
+func (h *SQSHandler) SetupRoutes(router *gin.Engine) {
+	// Set Gin to release mode for production
+	gin.SetMode(gin.ReleaseMode)
+
+	// Setup middleware
+	h.setupMiddleware(router)
+
+	// Health check endpoint
+	router.GET("/health", func(c *gin.Context) { h.handleHealthCheck(c.Writer, c.Request) })
+
+	// Dashboard endpoint
+	router.GET("/", func(c *gin.Context) { h.handleDashboard(c.Writer, c.Request) })
+
+	// Dashboard API routes group
+	api := router.Group("/api")
+	{
+		api.GET("/status", func(c *gin.Context) { h.handleAPIStatus(c.Writer, c.Request) })
+		api.GET("/queues", func(c *gin.Context) { h.handleAPIListQueues(c.Writer, c.Request) })
+		api.POST("/queues", func(c *gin.Context) { h.handleAPICreateQueue(c.Writer, c.Request) })
+		api.DELETE("/queues/:name", func(c *gin.Context) { h.handleAPIDeleteQueue(c.Writer, c.Request) })
+		api.POST("/messages", func(c *gin.Context) { h.handleAPISendMessage(c.Writer, c.Request) })
+		api.POST("/messages/poll", func(c *gin.Context) { h.handleAPIPollMessages(c.Writer, c.Request) })
+		api.POST("/messages/send", func(c *gin.Context) { h.handleAPISendMessage(c.Writer, c.Request) })
+		api.GET("/queues/:name/messages", func(c *gin.Context) { h.handleAPIGetQueueMessages(c.Writer, c.Request) })
+	}
+
+	// SQS protocol endpoint (form-encoded and JSON)
+	router.POST("/", h.ginHandleSQSProtocol)
+}
+
+// setupMiddleware configures Gin middleware
+func (h *SQSHandler) setupMiddleware(router *gin.Engine) {
+	// CORS middleware
+	router.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"*"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"*"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+	}))
+
+	// Custom request logging
+	router.Use(gin.LoggerWithFormatter(func(param gin.LogFormatterParams) string {
+		return fmt.Sprintf("DEBUG: %s %s\n", param.Method, param.Path)
+	}))
+
+	// Recovery middleware
+	router.Use(gin.Recovery())
+}
+
+// ginHandleSQSProtocol handles all SQS protocol requests (form-encoded and JSON)
+func (h *SQSHandler) ginHandleSQSProtocol(c *gin.Context) {
+	// Detect protocol based on Content-Type
+	contentType := c.GetHeader("Content-Type")
+	isJSONProtocol := strings.Contains(contentType, "application/x-amz-json-1.0")
+
+	if isJSONProtocol {
+		h.handleJSONRequest(c.Writer, c.Request)
+		return
+	}
+
+	// Handle traditional form-encoded SQS requests
+	if err := c.Request.ParseForm(); err != nil {
+		h.writeErrorResponse(c.Writer, "InvalidRequest", "Failed to parse form data", http.StatusBadRequest)
+		return
+	}
+
+	action := c.Request.FormValue("Action")
+
+	switch action {
+	case "CreateQueue":
+		h.handleCreateQueue(c.Writer, c.Request)
+	case "DeleteQueue":
+		h.handleDeleteQueue(c.Writer, c.Request)
+	case "ListQueues":
+		h.handleListQueues(c.Writer, c.Request)
+	case "GetQueueUrl":
+		h.handleGetQueueUrl(c.Writer, c.Request)
+	case "SendMessage":
+		h.handleSendMessage(c.Writer, c.Request)
+	case "SendMessageBatch":
+		h.handleSendMessageBatch(c.Writer, c.Request)
+	case "ReceiveMessage":
+		h.handleReceiveMessage(c.Writer, c.Request)
+	case "DeleteMessage":
+		h.handleDeleteMessage(c.Writer, c.Request)
+	case "DeleteMessageBatch":
+		h.handleDeleteMessageBatch(c.Writer, c.Request)
+	case "ChangeMessageVisibility":
+		h.handleChangeMessageVisibility(c.Writer, c.Request)
+	case "ChangeMessageVisibilityBatch":
+		h.handleChangeMessageVisibilityBatch(c.Writer, c.Request)
+	case "GetQueueAttributes":
+		h.handleGetQueueAttributes(c.Writer, c.Request)
+	case "SetQueueAttributes":
+		h.handleSetQueueAttributes(c.Writer, c.Request)
+	case "PurgeQueue":
+		h.handlePurgeQueue(c.Writer, c.Request)
+	default:
+		h.writeErrorResponse(c.Writer, "InvalidAction", fmt.Sprintf("Unknown action: %s", action), http.StatusBadRequest)
+	}
+}
+
+// Legacy method for backwards compatibility - will be removed
 func (h *SQSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	fmt.Printf("WARNING: ServeHTTP called - this should not happen with Gin router\n")
 	fmt.Printf("DEBUG: %s %s\n", r.Method, r.URL.Path)
 
 	// Handle health check

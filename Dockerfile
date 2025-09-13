@@ -1,5 +1,5 @@
-# Use Go 1.21 bullseye as base image
-FROM golang:1.21-bullseye AS base
+# Use Go 1.23 bullseye as base image
+FROM golang:1.23-bullseye AS base
 
 # Move to working directory /build
 WORKDIR /build

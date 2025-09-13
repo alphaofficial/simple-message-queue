@@ -33,9 +33,9 @@ print_error() {
 run_test_suite() {
     local test_dir=$1
     local suite_name=$2
-    
+
     print_status "Running $suite_name tests..."
-    
+
     if go test -v "./$test_dir" -timeout 30s; then
         print_success "$suite_name tests passed"
         return 0
@@ -51,33 +51,33 @@ main() {
     echo "          SQS Bridge Test Runner"
     echo "=========================================="
     echo
-    
+
     # Check if Go is installed
     if ! command -v go &> /dev/null; then
         print_error "Go is not installed or not in PATH"
         exit 1
     fi
-    
+
     print_status "Go version: $(go version)"
     echo
-    
+
     # Initialize variables to track results
     total_suites=0
     passed_suites=0
     failed_suites=()
-    
+
     # Test suites to run (test_dir:suite_name pairs)
     test_suites=(
-        "tests/api:API Handler"
-        "tests/storage/sqlite:SQLite Storage"
+        "unit/api:API Handler"
+        "unit/storage/sqlite:SQLite Storage"
     )
-    
+
     # Run each test suite
     for suite in "${test_suites[@]}"; do
         test_dir="${suite%%:*}"
         suite_name="${suite#*:}"
         total_suites=$((total_suites + 1))
-        
+
         echo "----------------------------------------"
         if run_test_suite "$test_dir" "$suite_name"; then
             passed_suites=$((passed_suites + 1))
@@ -86,25 +86,25 @@ main() {
         fi
         echo
     done
-    
+
     # Run all tests together for coverage
     echo "----------------------------------------"
     print_status "Running all tests together..."
-    if go test ./tests/... -race -timeout 60s; then
+    if go test ./unit/... -race -timeout 60s; then
         print_success "All tests completed"
     else
         print_warning "Some tests failed in combined run"
     fi
     echo
-    
+
     # Generate test coverage report
     echo "----------------------------------------"
     print_status "Generating test coverage report..."
-    if go test ./tests/... -coverprofile=coverage.out -timeout 60s; then
+    if go test ./unit/... -coverprofile=coverage.out -timeout 60s; then
         if command -v go &> /dev/null; then
             coverage=$(go tool cover -func=coverage.out | grep total | awk '{print $3}')
             print_success "Test coverage: $coverage"
-            
+
             # Generate HTML coverage report
             go tool cover -html=coverage.out -o coverage.html
             print_success "HTML coverage report generated: coverage.html"
@@ -113,7 +113,7 @@ main() {
         print_warning "Coverage report generation failed"
     fi
     echo
-    
+
     # Summary
     echo "=========================================="
     echo "              Test Summary"
@@ -121,7 +121,7 @@ main() {
     echo "Total test suites: $total_suites"
     echo "Passed: $passed_suites"
     echo "Failed: $((total_suites - passed_suites))"
-    
+
     if [ ${#failed_suites[@]} -gt 0 ]; then
         echo
         print_error "Failed test suites:"
@@ -142,14 +142,14 @@ main() {
 if [ $# -eq 1 ]; then
     case $1 in
         "api")
-            run_test_suite "tests/api" "API Handler"
+            run_test_suite "unit/api" "API Handler"
             ;;
         "storage")
-            run_test_suite "tests/storage/sqlite" "SQLite Storage"
+            run_test_suite "unit/storage/sqlite" "SQLite Storage"
             ;;
         "coverage")
             print_status "Running tests with coverage..."
-            go test ./tests/... -coverprofile=coverage.out -timeout 60s
+            go test ./unit/... -coverprofile=coverage.out -timeout 60s
             go tool cover -func=coverage.out
             go tool cover -html=coverage.out -o coverage.html
             print_success "Coverage report generated: coverage.html"
