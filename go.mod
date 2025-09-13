@@ -1,4 +1,4 @@
-module sqs-backend
+module sqs-bridge
 
 go 1.21.5
 

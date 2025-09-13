@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"sqs-backend/src/storage"
-	"sqs-backend/src/storage/sqlite"
+	"sqs-bridge/src/storage"
+	"sqs-bridge/src/storage/sqlite"
 )
 
 func setupTestDB(t *testing.T) *sqlite.SQLiteStorage {

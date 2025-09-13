@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 
-	storage "sqs-backend/src/storage"
+	storage "sqs-bridge/src/storage"
 )
 
 type SQLiteStorage struct {
@@ -468,6 +468,10 @@ func (s *SQLiteStorage) DeleteMessage(ctx context.Context, queueName string, rec
 }
 
 func (s *SQLiteStorage) DeleteMessageBatch(ctx context.Context, queueName string, receiptHandles []string) error {
+	if len(receiptHandles) == 0 {
+		return nil
+	}
+
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
@@ -475,8 +479,9 @@ func (s *SQLiteStorage) DeleteMessageBatch(ctx context.Context, queueName string
 	defer tx.Rollback()
 
 	for _, handle := range receiptHandles {
-		if err := s.DeleteMessage(ctx, queueName, handle); err != nil {
-			return err
+		_, err := tx.ExecContext(ctx, "DELETE FROM messages WHERE queue_name = ? AND receipt_handle = ?", queueName, handle)
+		if err != nil {
+			return fmt.Errorf("failed to delete message: %w", err)
 		}
 	}
 

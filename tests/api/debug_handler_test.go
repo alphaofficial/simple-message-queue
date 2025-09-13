@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"sqs-backend/src/api"
-	"sqs-backend/src/storage"
+	"sqs-bridge/src/api"
+	"sqs-bridge/src/storage"
 )
 
 func TestHandlerDebugging(t *testing.T) {

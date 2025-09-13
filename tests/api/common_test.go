@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"sqs-backend/src/storage"
+	"sqs-bridge/src/storage"
 )
 
 // Mock storage for testing

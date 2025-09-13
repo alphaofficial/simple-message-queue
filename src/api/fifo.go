@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"sqs-backend/src/storage"
+	"sqs-bridge/src/storage"
 )
 
 // FIFO utility functions

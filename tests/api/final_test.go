@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"sqs-backend/src/api"
-	"sqs-backend/src/storage"
+	"sqs-bridge/src/api"
+	"sqs-bridge/src/storage"
 )
 
 // Simple mock storage that doesn't implement visibility timeout behavior for testing

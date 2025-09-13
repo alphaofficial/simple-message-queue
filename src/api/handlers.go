@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"crypto/md5"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
@@ -10,14 +11,75 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
-	storage "sqs-backend/src/storage"
+	storage "sqs-bridge/src/storage"
 )
+
+// calculateMD5OfMessageAttributes calculates the MD5 hash of message attributes
+// according to the AWS SQS specification
+func calculateMD5OfMessageAttributes(attrs map[string]storage.MessageAttribute) string {
+	if len(attrs) == 0 {
+		return ""
+	}
+
+	// Sort attribute names
+	names := make([]string, 0, len(attrs))
+	for name := range attrs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	// Build the buffer according to AWS spec
+	var buffer []byte
+
+	for _, name := range names {
+		attr := attrs[name]
+
+		// Encode name: length (4 bytes) + UTF-8 bytes
+		nameBytes := []byte(name)
+		nameLenBytes := make([]byte, 4)
+		binary.BigEndian.PutUint32(nameLenBytes, uint32(len(nameBytes)))
+		buffer = append(buffer, nameLenBytes...)
+		buffer = append(buffer, nameBytes...)
+
+		// Encode data type: length (4 bytes) + UTF-8 bytes
+		dataTypeBytes := []byte(attr.DataType)
+		dataTypeLenBytes := make([]byte, 4)
+		binary.BigEndian.PutUint32(dataTypeLenBytes, uint32(len(dataTypeBytes)))
+		buffer = append(buffer, dataTypeLenBytes...)
+		buffer = append(buffer, dataTypeBytes...)
+
+		// Encode transport type (1 byte)
+		// String and Number logical types use String transport (1)
+		// Binary logical type uses Binary transport (2)
+		if strings.HasPrefix(attr.DataType, "Binary") {
+			buffer = append(buffer, 2) // Binary transport
+			// For binary, encode the raw bytes
+			valueLenBytes := make([]byte, 4)
+			binary.BigEndian.PutUint32(valueLenBytes, uint32(len(attr.BinaryValue)))
+			buffer = append(buffer, valueLenBytes...)
+			buffer = append(buffer, attr.BinaryValue...)
+		} else {
+			buffer = append(buffer, 1) // String transport (for String and Number)
+			// For string, encode the UTF-8 bytes
+			valueBytes := []byte(attr.StringValue)
+			valueLenBytes := make([]byte, 4)
+			binary.BigEndian.PutUint32(valueLenBytes, uint32(len(valueBytes)))
+			buffer = append(buffer, valueLenBytes...)
+			buffer = append(buffer, valueBytes...)
+		}
+	}
+
+	// Calculate MD5
+	hash := md5.Sum(buffer)
+	return hex.EncodeToString(hash[:])
+}
 
 type SQSHandler struct {
 	storage storage.Storage
@@ -47,12 +109,22 @@ func (h *SQSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// SQS XML API endpoints (original functionality)
+	// SQS API endpoints (both JSON and XML protocols)
 	if r.Method != http.MethodPost {
 		h.writeErrorResponse(w, "InvalidAction", "Only POST method is supported", http.StatusMethodNotAllowed)
 		return
 	}
 
+	// Detect protocol based on Content-Type
+	contentType := r.Header.Get("Content-Type")
+	isJSONProtocol := strings.Contains(contentType, "application/x-amz-json-1.0")
+
+	if isJSONProtocol {
+		h.handleJSONRequest(w, r)
+		return
+	}
+
+	// Handle traditional form-encoded SQS requests
 	if err := r.ParseForm(); err != nil {
 		h.writeErrorResponse(w, "InvalidRequest", "Failed to parse form data", http.StatusBadRequest)
 		return
@@ -304,6 +376,9 @@ func (h *SQSHandler) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 
 			message.MessageAttributes[attrName] = attr
 		}
+
+		// Calculate MD5 of message attributes
+		message.MD5OfAttributes = calculateMD5OfMessageAttributes(message.MessageAttributes)
 	}
 
 	// Handle FIFO queue parameters
@@ -405,7 +480,9 @@ func (h *SQSHandler) handleReceiveMessage(w http.ResponseWriter, r *http.Request
 		responseMessages = append(responseMessages, Message{
 			MessageId:              msg.ID,
 			ReceiptHandle:          msg.ReceiptHandle,
-			MD5OfBody:              msg.MD5OfBody,
+			MD5OfBody:              msg.MD5OfBody, // Legacy field for backward compatibility
+			MD5OfMessageBody:       msg.MD5OfBody, // Modern field (same value for compatibility)
+			MD5OfMessageAttributes: msg.MD5OfAttributes,
 			Body:                   msg.Body,
 			Attributes:             convertAttributes(msg.Attributes),
 			MessageAttributes:      convertMessageAttributesToSlice(msg.MessageAttributes),
@@ -768,6 +845,9 @@ func (h *SQSHandler) handleSendMessageBatch(w http.ResponseWriter, r *http.Reque
 		hash := md5.Sum([]byte(body))
 		message.MD5OfBody = hex.EncodeToString(hash[:])
 
+		// Calculate MD5 of message attributes
+		message.MD5OfAttributes = calculateMD5OfMessageAttributes(message.MessageAttributes)
+
 		// Parse DelaySeconds if provided
 		delayKey := fmt.Sprintf("Entry.%d.DelaySeconds", entryIndex)
 		if delayStr := r.FormValue(delayKey); delayStr != "" {
@@ -976,6 +1056,450 @@ func (h *SQSHandler) writeXMLResponse(w http.ResponseWriter, response interface{
 	xml.NewEncoder(w).Encode(response)
 }
 
+// JSON Protocol Response Functions
+func (h *SQSHandler) writeJSONErrorResponse(w http.ResponseWriter, code, message string, statusCode int) {
+	errorResp := JSONErrorResponse{
+		Type:    fmt.Sprintf("com.amazon.sqs.api#%s", code),
+		Code:    code,
+		Message: message,
+	}
+
+	w.Header().Set("Content-Type", "application/x-amz-json-1.0")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(errorResp)
+}
+
+func (h *SQSHandler) writeJSONResponse(w http.ResponseWriter, response interface{}) {
+	w.Header().Set("Content-Type", "application/x-amz-json-1.0")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
+}
+
+// JSON Protocol Handler
+func (h *SQSHandler) handleJSONRequest(w http.ResponseWriter, r *http.Request) {
+	// Extract action from x-amz-target header
+	target := r.Header.Get("x-amz-target")
+	if target == "" {
+		h.writeJSONErrorResponse(w, "InvalidAction", "Missing x-amz-target header", http.StatusBadRequest)
+		return
+	}
+
+	// Parse action from target (e.g., "AmazonSQS.SendMessage" -> "SendMessage")
+	parts := strings.Split(target, ".")
+	if len(parts) != 2 || parts[0] != "AmazonSQS" {
+		h.writeJSONErrorResponse(w, "InvalidAction", fmt.Sprintf("Invalid target: %s", target), http.StatusBadRequest)
+		return
+	}
+	action := parts[1]
+
+	// Route to appropriate handler based on action
+	switch action {
+	case "SendMessage":
+		h.handleJSONSendMessage(w, r)
+	case "SendMessageBatch":
+		h.handleJSONSendMessageBatch(w, r)
+	case "ReceiveMessage":
+		h.handleJSONReceiveMessage(w, r)
+	case "DeleteMessage":
+		h.handleJSONDeleteMessage(w, r)
+	case "DeleteMessageBatch":
+		h.handleJSONDeleteMessageBatch(w, r)
+	default:
+		h.writeJSONErrorResponse(w, "InvalidAction", fmt.Sprintf("Unsupported action: %s", action), http.StatusBadRequest)
+	}
+}
+
+// JSON SendMessage Handler
+func (h *SQSHandler) handleJSONSendMessage(w http.ResponseWriter, r *http.Request) {
+	var req JSONSendMessageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeJSONErrorResponse(w, "InvalidRequest", "Failed to parse JSON request", http.StatusBadRequest)
+		return
+	}
+
+	if req.MessageBody == "" {
+		h.writeJSONErrorResponse(w, "MissingParameter", "MessageBody is required", http.StatusBadRequest)
+		return
+	}
+
+	// Extract queue name from URL
+	queueName := h.extractQueueNameFromURL(req.QueueUrl)
+	if queueName == "" {
+		h.writeJSONErrorResponse(w, "QueueDoesNotExist", "Invalid queue URL", http.StatusBadRequest)
+		return
+	}
+
+	// Check if queue exists
+	ctx := context.Background()
+	queue, err := h.storage.GetQueue(ctx, queueName)
+	if err != nil || queue == nil {
+		h.writeJSONErrorResponse(w, "QueueDoesNotExist", "Queue does not exist", http.StatusBadRequest)
+		return
+	}
+
+	// Convert JSON message attributes to storage format
+	storageAttrs := make(map[string]storage.MessageAttribute)
+	for k, v := range req.MessageAttributes {
+		storageAttrs[k] = storage.MessageAttribute{
+			DataType:    v.DataType,
+			StringValue: v.StringValue,
+			BinaryValue: v.BinaryValue,
+		}
+	}
+
+	// Create message
+	messageID := uuid.New().String()
+	md5Hash := md5.Sum([]byte(req.MessageBody))
+	md5Hex := hex.EncodeToString(md5Hash[:])
+
+	delaySeconds := 0
+	if req.DelaySeconds != nil {
+		delaySeconds = *req.DelaySeconds
+	}
+
+	message := &storage.Message{
+		ID:                     messageID,
+		QueueName:              queueName,
+		Body:                   req.MessageBody,
+		MessageAttributes:      storageAttrs,
+		MessageDeduplicationId: req.MessageDeduplicationId,
+		MessageGroupId:         req.MessageGroupId,
+		DelaySeconds:           delaySeconds,
+		CreatedAt:              time.Now(),
+		MD5OfBody:              md5Hex,
+	}
+
+	// Calculate MD5 of message attributes
+	message.MD5OfAttributes = calculateMD5OfMessageAttributes(storageAttrs)
+
+	// Debug logging for checksums
+	fmt.Printf("DEBUG: SendMessage JSON - MD5OfBody: %s, MD5OfAttributes: %s\n",
+		message.MD5OfBody, message.MD5OfAttributes)
+
+	// Handle FIFO queue logic
+	if strings.HasSuffix(queueName, ".fifo") {
+		if req.MessageGroupId == "" {
+			h.writeJSONErrorResponse(w, "MissingParameter", "MessageGroupId is required for FIFO queues", http.StatusBadRequest)
+			return
+		}
+
+		// Set deduplication ID if not provided (use body hash)
+		if req.MessageDeduplicationId == "" {
+			message.MessageDeduplicationId = md5Hex
+		}
+
+		// For FIFO, we'll use a simple incremental sequence number
+		// In a real implementation, this would be more sophisticated
+		sequenceNumber := fmt.Sprintf("%d", time.Now().UnixNano())
+		message.SequenceNumber = sequenceNumber
+	}
+
+	// Send the message
+	err = h.storage.SendMessage(ctx, message)
+	if err != nil {
+		h.writeJSONErrorResponse(w, "InternalError", "Failed to send message", http.StatusInternalServerError)
+		return
+	}
+
+	// Return response
+	resp := JSONSendMessageResponse{
+		MessageId:              messageID,
+		MD5OfMessageBody:       md5Hex,
+		MD5OfMessageAttributes: message.MD5OfAttributes,
+		MessageDeduplicationId: message.MessageDeduplicationId,
+		MessageGroupId:         message.MessageGroupId,
+		SequenceNumber:         message.SequenceNumber,
+	}
+
+	h.writeJSONResponse(w, resp)
+}
+
+// JSON ReceiveMessage Handler
+func (h *SQSHandler) handleJSONReceiveMessage(w http.ResponseWriter, r *http.Request) {
+	var req JSONReceiveMessageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeJSONErrorResponse(w, "InvalidRequest", "Failed to parse JSON request", http.StatusBadRequest)
+		return
+	}
+
+	queueName := h.extractQueueNameFromURL(req.QueueUrl)
+	if queueName == "" {
+		h.writeJSONErrorResponse(w, "QueueDoesNotExist", "Invalid queue URL", http.StatusBadRequest)
+		return
+	}
+
+	maxMessages := 1
+	if req.MaxNumberOfMessages != nil {
+		maxMessages = *req.MaxNumberOfMessages
+	}
+
+	visibilityTimeout := 30
+	if req.VisibilityTimeout != nil {
+		visibilityTimeout = *req.VisibilityTimeout
+	}
+
+	ctx := context.Background()
+	messages, err := h.storage.ReceiveMessages(ctx, queueName, maxMessages, visibilityTimeout, 0)
+	if err != nil {
+		h.writeJSONErrorResponse(w, "InternalError", "Failed to receive messages", http.StatusInternalServerError)
+		return
+	}
+
+	var jsonMessages []JSONMessage
+	for _, msg := range messages {
+		// Convert storage message attributes to JSON format
+		jsonAttrs := make(map[string]JSONMessageAttribute)
+		for k, v := range msg.MessageAttributes {
+			jsonAttrs[k] = JSONMessageAttribute{
+				DataType:    v.DataType,
+				StringValue: v.StringValue,
+				BinaryValue: v.BinaryValue,
+			}
+		}
+
+		jsonMsg := JSONMessage{
+			MessageId:              msg.ID,
+			ReceiptHandle:          msg.ReceiptHandle,
+			MD5OfBody:              msg.MD5OfBody, // Legacy field for backward compatibility
+			MD5OfMessageBody:       msg.MD5OfBody, // Modern field (same value for compatibility)
+			MD5OfMessageAttributes: msg.MD5OfAttributes,
+			Body:                   msg.Body,
+			MessageAttributes:      jsonAttrs,
+			MessageGroupId:         msg.MessageGroupId,
+			MessageDeduplicationId: msg.MessageDeduplicationId,
+			SequenceNumber:         msg.SequenceNumber,
+		}
+		jsonMessages = append(jsonMessages, jsonMsg)
+	}
+
+	resp := JSONReceiveMessageResponse{
+		Messages: jsonMessages,
+	}
+
+	h.writeJSONResponse(w, resp)
+}
+
+// JSON DeleteMessage Handler
+func (h *SQSHandler) handleJSONDeleteMessage(w http.ResponseWriter, r *http.Request) {
+	var req JSONDeleteMessageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeJSONErrorResponse(w, "InvalidRequest", "Failed to parse JSON request", http.StatusBadRequest)
+		return
+	}
+
+	if req.ReceiptHandle == "" {
+		h.writeJSONErrorResponse(w, "MissingParameter", "ReceiptHandle is required", http.StatusBadRequest)
+		return
+	}
+
+	// Extract queue name from URL
+	queueName := h.extractQueueNameFromURL(req.QueueUrl)
+	if queueName == "" {
+		h.writeJSONErrorResponse(w, "QueueDoesNotExist", "Invalid queue URL", http.StatusBadRequest)
+		return
+	}
+
+	ctx := context.Background()
+	err := h.storage.DeleteMessage(ctx, queueName, req.ReceiptHandle)
+	if err != nil {
+		h.writeJSONErrorResponse(w, "InternalError", "Failed to delete message", http.StatusInternalServerError)
+		return
+	}
+
+	// Return empty JSON object for successful delete
+	h.writeJSONResponse(w, map[string]interface{}{})
+}
+
+// JSON DeleteMessageBatch Handler
+func (h *SQSHandler) handleJSONDeleteMessageBatch(w http.ResponseWriter, r *http.Request) {
+	var req JSONDeleteMessageBatchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeJSONErrorResponse(w, "InvalidRequest", "Failed to parse JSON request", http.StatusBadRequest)
+		return
+	}
+
+	if len(req.Entries) == 0 {
+		h.writeJSONErrorResponse(w, "MissingParameter", "No valid batch entries found", http.StatusBadRequest)
+		return
+	}
+
+	// Extract queue name from URL
+	queueName := h.extractQueueNameFromURL(req.QueueUrl)
+	if queueName == "" {
+		h.writeJSONErrorResponse(w, "QueueDoesNotExist", "Invalid queue URL", http.StatusBadRequest)
+		return
+	}
+
+	// Extract receipt handles from entries
+	var receiptHandles []string
+	var successful []JSONBatchResultEntry
+	var failed []JSONBatchResultErrorEntry
+
+	for _, entry := range req.Entries {
+		if entry.Id == "" || entry.ReceiptHandle == "" {
+			failed = append(failed, JSONBatchResultErrorEntry{
+				Id:          entry.Id,
+				Code:        "MissingParameter",
+				Message:     "Id and ReceiptHandle are required",
+				SenderFault: true,
+			})
+			continue
+		}
+		receiptHandles = append(receiptHandles, entry.ReceiptHandle)
+		successful = append(successful, JSONBatchResultEntry{
+			Id: entry.Id,
+		})
+	}
+
+	// If we have valid receipt handles, delete them
+	if len(receiptHandles) > 0 {
+		ctx := context.Background()
+		if err := h.storage.DeleteMessageBatch(ctx, queueName, receiptHandles); err != nil {
+			h.writeJSONErrorResponse(w, "InternalError", "Failed to delete message batch", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	response := JSONDeleteMessageBatchResponse{
+		Successful: successful,
+		Failed:     failed,
+	}
+
+	h.writeJSONResponse(w, response)
+}
+
+// JSON SendMessageBatch Handler
+func (h *SQSHandler) handleJSONSendMessageBatch(w http.ResponseWriter, r *http.Request) {
+	var req JSONSendMessageBatchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeJSONErrorResponse(w, "InvalidRequest", "Failed to parse JSON request", http.StatusBadRequest)
+		return
+	}
+
+	if req.QueueUrl == "" {
+		h.writeJSONErrorResponse(w, "MissingParameter", "QueueUrl is required", http.StatusBadRequest)
+		return
+	}
+
+	if len(req.Entries) == 0 {
+		h.writeJSONErrorResponse(w, "EmptyBatchRequest", "No entries in batch request", http.StatusBadRequest)
+		return
+	}
+
+	if len(req.Entries) > 10 {
+		h.writeJSONErrorResponse(w, "TooManyEntriesInBatchRequest", "Maximum of 10 entries allowed", http.StatusBadRequest)
+		return
+	}
+
+	// Extract queue name from URL
+	queueName := h.extractQueueNameFromURL(req.QueueUrl)
+	if queueName == "" {
+		h.writeJSONErrorResponse(w, "QueueDoesNotExist", "Invalid queue URL", http.StatusBadRequest)
+		return
+	}
+
+	// Check if queue exists
+	ctx := context.Background()
+	queue, err := h.storage.GetQueue(ctx, queueName)
+	if err != nil || queue == nil {
+		h.writeJSONErrorResponse(w, "QueueDoesNotExist", "Queue does not exist", http.StatusBadRequest)
+		return
+	}
+
+	var messages []*storage.Message
+	var successful []JSONBatchResultEntry
+	var failed []JSONBatchResultErrorEntry
+
+	for _, entry := range req.Entries {
+		// Validate entry
+		if entry.Id == "" {
+			failed = append(failed, JSONBatchResultErrorEntry{
+				Id:          entry.Id,
+				SenderFault: true,
+				Code:        "MissingParameter",
+				Message:     "Entry Id is required",
+			})
+			continue
+		}
+
+		if entry.MessageBody == "" {
+			failed = append(failed, JSONBatchResultErrorEntry{
+				Id:          entry.Id,
+				SenderFault: true,
+				Code:        "MissingParameter",
+				Message:     "MessageBody is required",
+			})
+			continue
+		}
+
+		// Create message
+		messageID := uuid.New().String()
+		message := &storage.Message{
+			ID:                     messageID,
+			QueueName:              queueName,
+			Body:                   entry.MessageBody,
+			Attributes:             make(map[string]string),
+			MessageAttributes:      make(map[string]storage.MessageAttribute),
+			ReceiptHandle:          uuid.New().String(),
+			ReceiveCount:           0,
+			CreatedAt:              time.Now(),
+			DelaySeconds:           0,
+			MessageDeduplicationId: entry.MessageDeduplicationId,
+			MessageGroupId:         entry.MessageGroupId,
+		}
+
+		// Set DelaySeconds if provided
+		if entry.DelaySeconds != nil {
+			message.DelaySeconds = *entry.DelaySeconds
+		}
+
+		// Convert JSON message attributes to storage format
+		for name, attr := range entry.MessageAttributes {
+			message.MessageAttributes[name] = storage.MessageAttribute{
+				DataType:    attr.DataType,
+				StringValue: attr.StringValue,
+				BinaryValue: attr.BinaryValue,
+			}
+		}
+
+		// Calculate MD5 checksums
+		hash := md5.Sum([]byte(entry.MessageBody))
+		message.MD5OfBody = hex.EncodeToString(hash[:])
+
+		// Calculate MD5 of message attributes
+		message.MD5OfAttributes = calculateMD5OfMessageAttributes(message.MessageAttributes)
+
+		messages = append(messages, message)
+
+		// Add to successful entries
+		successful = append(successful, JSONBatchResultEntry{
+			Id:                     entry.Id,
+			MessageId:              messageID,
+			MD5OfMessageBody:       message.MD5OfBody,
+			MD5OfMessageAttributes: message.MD5OfAttributes,
+			MessageDeduplicationId: message.MessageDeduplicationId,
+			MessageGroupId:         message.MessageGroupId,
+			SequenceNumber:         message.SequenceNumber,
+		})
+	}
+
+	// Send messages if any are valid
+	if len(messages) > 0 {
+		if err := h.storage.SendMessageBatch(ctx, messages); err != nil {
+			h.writeJSONErrorResponse(w, "InternalError", "Failed to send message batch", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// Return response
+	resp := JSONSendMessageBatchResponse{
+		Successful: successful,
+		Failed:     failed,
+	}
+
+	h.writeJSONResponse(w, resp)
+}
+
 func convertMessageAttributes(attrs map[string]storage.MessageAttribute) map[string]MessageAttribute {
 	result := make(map[string]MessageAttribute)
 	for k, v := range attrs {
@@ -1146,6 +1670,12 @@ func (h *SQSHandler) handleAPIRoutes(w http.ResponseWriter, r *http.Request) {
 			h.handleAPIListQueues(w, r)
 		} else if r.Method == http.MethodPost {
 			h.handleAPICreateQueue(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	case "/api/messages":
+		if r.Method == http.MethodPost {
+			h.handleAPISendMessage(w, r)
 		} else {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
