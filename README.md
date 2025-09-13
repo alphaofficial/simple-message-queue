@@ -15,13 +15,6 @@ cd sqs-bridge
 go mod download
 ```
 
-3. Configure environment variables (optional):
-```bash
-export PORT=8080
-export DB_PATH=./sqs.db
-export BASE_URL=http://localhost:8080
-```
-
 ## Build Instructions
 
 ### Development
@@ -111,13 +104,6 @@ The dashboard provides:
 - Queue management and monitoring
 - Message browsing and inspection
 
-## Configuration
-
-| Environment Variable | Default | Description |
-|---------------------|---------|-------------|
-| `PORT` | `8080` | Server port |
-| `DB_PATH` | `./sqs.db` | SQLite database path |
-| `BASE_URL` | `http://localhost:8080` | Base URL for queue URLs |
 
 ## License
 
