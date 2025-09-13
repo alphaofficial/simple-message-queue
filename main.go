@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -11,39 +10,51 @@ import (
 	"time"
 
 	"sqs-bridge/src/api"
+	"sqs-bridge/src/config"
+	"sqs-bridge/src/storage"
 	"sqs-bridge/src/storage/sqlite"
 )
 
 func main() {
-	// Configuration
-	port := getEnv("PORT", "8080")
-	dbPath := getEnv("DB_PATH", "./sqs.db")
-	baseURL := getEnv("BASE_URL", fmt.Sprintf("http://localhost:%s", port))
+	// Load configuration
+	cfg := config.Load()
 
-	// Initialize storage
-	storage, err := sqlite.NewSQLiteStorage(dbPath)
-	if err != nil {
-		log.Fatalf("Failed to initialize storage: %v", err)
+	// Initialize storage based on adapter type
+	var storageInstance storage.Storage
+	var err error
+
+	switch cfg.StorageType {
+	case "sqlite":
+		storageInstance, err = sqlite.NewSQLiteStorage(cfg.SQLiteDBPath)
+		if err != nil {
+			log.Fatalf("Failed to initialize SQLite storage: %v", err)
+		}
+		log.Printf("Using SQLite storage with database: %s", cfg.SQLiteDBPath)
+	case "postgres":
+		log.Fatalf("PostgreSQL storage adapter not yet implemented")
+	default:
+		log.Fatalf("Unknown storage adapter: %s. Supported adapters: sqlite, postgres", cfg.StorageType)
 	}
-	defer storage.Close()
+
+	defer storageInstance.Close()
 
 	// Initialize SQS handler
-	sqsHandler := api.NewSQSHandler(storage, baseURL)
+	sqsHandler := api.NewSQSHandler(storageInstance, cfg.BaseURL)
 
 	// Setup HTTP server
 	mux := http.NewServeMux()
 	mux.Handle("/", sqsHandler)
 
 	server := &http.Server{
-		Addr:    ":" + port,
+		Addr:    ":" + cfg.Port,
 		Handler: mux,
 	}
 
 	// Start server in goroutine
 	go func() {
-		log.Printf("Starting SQS server on port %s", port)
-		log.Printf("Base URL: %s", baseURL)
-		log.Printf("Database: %s", dbPath)
+		log.Printf("Starting SQS server on port %s", cfg.Port)
+		log.Printf("Base URL: %s", cfg.BaseURL)
+		log.Printf("Storage adapter: %s", cfg.StorageType)
 
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server failed to start: %v", err)
@@ -51,7 +62,7 @@ func main() {
 	}()
 
 	// Start background DLQ processor
-	go startDLQProcessor(storage)
+	go startDLQProcessor(storageInstance)
 
 	// Wait for interrupt signal
 	c := make(chan os.Signal, 1)
@@ -71,14 +82,14 @@ func main() {
 	log.Println("Server exited")
 }
 
-func startDLQProcessor(storage *sqlite.SQLiteStorage) {
+func startDLQProcessor(storageInstance storage.Storage) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
 		// Process expired messages and move to DLQ
 		ctx := context.Background()
-		expiredMessages, err := storage.GetExpiredMessages(ctx)
+		expiredMessages, err := storageInstance.GetExpiredMessages(ctx)
 		if err != nil {
 			log.Printf("Error getting expired messages: %v", err)
 			continue
@@ -86,13 +97,13 @@ func startDLQProcessor(storage *sqlite.SQLiteStorage) {
 
 		for _, message := range expiredMessages {
 			// Get queue to find DLQ name
-			queue, err := storage.GetQueue(ctx, message.QueueName)
+			queue, err := storageInstance.GetQueue(ctx, message.QueueName)
 			if err != nil || queue == nil {
 				continue
 			}
 
 			if queue.DeadLetterQueueName != "" {
-				err := storage.MoveMessageToDLQ(ctx, message, queue.DeadLetterQueueName)
+				err := storageInstance.MoveMessageToDLQ(ctx, message, queue.DeadLetterQueueName)
 				if err != nil {
 					log.Printf("Error moving message to DLQ: %v", err)
 				} else {
@@ -101,11 +112,4 @@ func startDLQProcessor(storage *sqlite.SQLiteStorage) {
 			}
 		}
 	}
-}
-
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
 }

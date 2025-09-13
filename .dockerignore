@@ -1,0 +1,69 @@
+# Build artifacts
+*.db
+*.log
+*.tmp
+sqs-bridge
+sqs-server
+
+# Development files
+.git
+.gitignore
+*.md
+!README.md
+
+# Test files
+*_test.go
+tests/
+coverage.html
+coverage.out
+run-tests.sh
+
+# Development tools
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker files (avoid recursive copying)
+Dockerfile*
+.dockerignore
+docker-compose*.yml
+
+# CI/CD files
+.github/
+.gitlab-ci.yml
+.travis.yml
+Jenkinsfile
+
+# Example and demo files
+examples/
+cmd/test-client/
+
+# Temporary files
+tmp/
+temp/
+
+# Build outputs
+bin/
+dist/
+build/
+
+# Node.js (if any frontend)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Python (if any scripts)
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# Backup files
+*.bak
+*.backup

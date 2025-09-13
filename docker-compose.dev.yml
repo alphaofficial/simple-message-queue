@@ -1,0 +1,23 @@
+version: '3.8'
+
+# Development override - use with: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+services:
+  sqs-bridge:
+    build:
+      target: builder  # Stop at build stage for development
+    volumes:
+      - .:/app
+      - sqs_data_dev:/app/data
+    environment:
+      - PORT=8080
+      - DB_PATH=/app/data/sqs.db
+      - BASE_URL=http://localhost:8080
+      - GIN_MODE=debug
+    command: ["go", "run", "main.go"]
+    ports:
+      - "8080:8080"
+      - "9000:9000"  # Optional: debugging port
+
+volumes:
+  sqs_data_dev:
+    driver: local

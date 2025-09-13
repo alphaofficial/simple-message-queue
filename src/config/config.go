@@ -2,23 +2,32 @@ package config
 
 import (
 	"os"
-	"strconv"
 )
 
 type Config struct {
-	Port        string
-	DBPath      string
-	BaseURL     string
-	StorageType string
-	PostgresURL string
+	Port         string
+	BaseURL      string
+	StorageType  string
+	SQLiteDBPath string
+	PostgresURL  string
+	PostgresHost string
+	PostgresPort string
+	PostgresUser string
+	PostgresPass string
+	PostgresDB   string
 }
 
 func Load() *Config {
 	cfg := &Config{
-		Port:        getEnv("PORT", "8080"),
-		DBPath:      getEnv("DB_PATH", "./sqs.db"),
-		StorageType: getEnv("STORAGE_TYPE", "sqlite"),
-		PostgresURL: getEnv("POSTGRES_URL", ""),
+		Port:         getEnv("PORT", "8080"),
+		StorageType:  getEnv("STORAGE_ADAPTER", "sqlite"),
+		SQLiteDBPath: getEnv("SQLITE_DB_PATH", "./sqs.db"),
+		PostgresURL:  getEnv("DATABASE_URL", ""),
+		PostgresHost: getEnv("POSTGRES_HOST", "localhost"),
+		PostgresPort: getEnv("POSTGRES_PORT", "5432"),
+		PostgresUser: getEnv("POSTGRES_USER", ""),
+		PostgresPass: getEnv("POSTGRES_PASSWORD", ""),
+		PostgresDB:   getEnv("POSTGRES_DB", ""),
 	}
 
 	if cfg.BaseURL == "" {
@@ -31,15 +40,6 @@ func Load() *Config {
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
-	}
-	return defaultValue
-}
-
-func getEnvInt(key string, defaultValue int) int {
-	if value := os.Getenv(key); value != "" {
-		if intValue, err := strconv.Atoi(value); err == nil {
-			return intValue
-		}
 	}
 	return defaultValue
 }
