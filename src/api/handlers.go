@@ -96,6 +96,12 @@ func NewSQSHandler(storage storage.Storage, baseURL string) *SQSHandler {
 func (h *SQSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("DEBUG: %s %s\n", r.Method, r.URL.Path)
 
+	// Handle health check
+	if r.Method == http.MethodGet && r.URL.Path == "/health" {
+		h.handleHealthCheck(w, r)
+		return
+	}
+
 	// Handle dashboard requests
 	if r.Method == http.MethodGet && r.URL.Path == "/" {
 		h.handleDashboard(w, r)
@@ -1918,4 +1924,21 @@ func (h *SQSHandler) handleAPIGetQueueMessages(w http.ResponseWriter, r *http.Re
 	response += `]}`
 
 	w.Write([]byte(response))
+}
+
+// handleHealthCheck returns basic health status for Docker health checks
+func (h *SQSHandler) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
+	// Check database connectivity
+	ctx := r.Context()
+	_, err := h.storage.ListQueues(ctx, "")
+	if err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"status": "unhealthy", "error": "database connection failed"}`))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status": "healthy", "service": "sqs-bridge"}`))
 }
