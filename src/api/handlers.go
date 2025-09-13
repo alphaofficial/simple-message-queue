@@ -93,85 +93,6 @@ func NewSQSHandler(storage storage.Storage, baseURL string) *SQSHandler {
 	}
 }
 
-func (h *SQSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	fmt.Printf("DEBUG: %s %s\n", r.Method, r.URL.Path)
-
-	// Handle health check
-	if r.Method == http.MethodGet && r.URL.Path == "/health" {
-		h.handleHealthCheck(w, r)
-		return
-	}
-
-	// Handle dashboard requests
-	if r.Method == http.MethodGet && r.URL.Path == "/" {
-		h.handleDashboard(w, r)
-		return
-	}
-
-	// API endpoints for dashboard
-	if strings.HasPrefix(r.URL.Path, "/api/") {
-		fmt.Printf("DEBUG: Routing to API handler\n")
-		h.handleAPIRoutes(w, r)
-		return
-	}
-
-	// SQS API endpoints (both JSON and XML protocols)
-	if r.Method != http.MethodPost {
-		h.writeErrorResponse(w, "InvalidAction", "Only POST method is supported", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Detect protocol based on Content-Type
-	contentType := r.Header.Get("Content-Type")
-	isJSONProtocol := strings.Contains(contentType, "application/x-amz-json-1.0")
-
-	if isJSONProtocol {
-		h.handleJSONRequest(w, r)
-		return
-	}
-
-	// Handle traditional form-encoded SQS requests
-	if err := r.ParseForm(); err != nil {
-		h.writeErrorResponse(w, "InvalidRequest", "Failed to parse form data", http.StatusBadRequest)
-		return
-	}
-
-	action := r.FormValue("Action")
-
-	switch action {
-	case "CreateQueue":
-		h.handleCreateQueue(w, r)
-	case "DeleteQueue":
-		h.handleDeleteQueue(w, r)
-	case "ListQueues":
-		h.handleListQueues(w, r)
-	case "GetQueueUrl":
-		h.handleGetQueueUrl(w, r)
-	case "SendMessage":
-		h.handleSendMessage(w, r)
-	case "SendMessageBatch":
-		h.handleSendMessageBatch(w, r)
-	case "ReceiveMessage":
-		h.handleReceiveMessage(w, r)
-	case "DeleteMessage":
-		h.handleDeleteMessage(w, r)
-	case "DeleteMessageBatch":
-		h.handleDeleteMessageBatch(w, r)
-	case "ChangeMessageVisibility":
-		h.handleChangeMessageVisibility(w, r)
-	case "ChangeMessageVisibilityBatch":
-		h.handleChangeMessageVisibilityBatch(w, r)
-	case "GetQueueAttributes":
-		h.handleGetQueueAttributes(w, r)
-	case "SetQueueAttributes":
-		h.handleSetQueueAttributes(w, r)
-	case "PurgeQueue":
-		h.handlePurgeQueue(w, r)
-	default:
-		h.writeErrorResponse(w, "InvalidAction", fmt.Sprintf("Unknown action: %s", action), http.StatusBadRequest)
-	}
-}
-
 func (h *SQSHandler) handleCreateQueue(w http.ResponseWriter, r *http.Request) {
 	queueName := r.FormValue("QueueName")
 	if queueName == "" {
@@ -211,6 +132,11 @@ func (h *SQSHandler) handleCreateQueue(w http.ResponseWriter, r *http.Request) {
 	if val, ok := attributes["VisibilityTimeout"]; ok {
 		if timeout, err := strconv.Atoi(val); err == nil {
 			queue.VisibilityTimeoutSeconds = timeout
+		}
+	}
+	if val, ok := attributes["MessageRetentionPeriod"]; ok {
+		if period, err := strconv.Atoi(val); err == nil {
+			queue.MessageRetentionPeriod = period
 		}
 	}
 	if val, ok := attributes["MaxReceiveCount"]; ok {
@@ -785,7 +711,54 @@ func (h *SQSHandler) generateQueueAttributes(ctx context.Context, queue *storage
 }
 
 func (h *SQSHandler) handleSetQueueAttributes(w http.ResponseWriter, r *http.Request) {
-	// Simplified implementation - would need to be expanded
+	queueURL := r.FormValue("QueueUrl")
+	queueName := h.extractQueueNameFromURL(queueURL)
+
+	// Get existing queue
+	queue, err := h.storage.GetQueue(r.Context(), queueName)
+	if err != nil || queue == nil {
+		h.writeErrorResponse(w, "QueueDoesNotExist", "Queue does not exist", http.StatusBadRequest)
+		return
+	}
+
+	// Parse attributes from form
+	attributes := make(map[string]string)
+	for key, values := range r.Form {
+		if strings.HasPrefix(key, "Attribute.") && strings.HasSuffix(key, ".Name") {
+			attrIndex := strings.TrimPrefix(key, "Attribute.")
+			attrIndex = strings.TrimSuffix(attrIndex, ".Name")
+
+			attrName := values[0]
+			attrValueKey := fmt.Sprintf("Attribute.%s.Value", attrIndex)
+			if attrValues, ok := r.Form[attrValueKey]; ok && len(attrValues) > 0 {
+				attributes[attrName] = attrValues[0]
+			}
+		}
+	}
+
+	// Update queue attributes
+	if val, ok := attributes["VisibilityTimeout"]; ok {
+		if timeout, err := strconv.Atoi(val); err == nil {
+			queue.VisibilityTimeoutSeconds = timeout
+		}
+	}
+	if val, ok := attributes["MessageRetentionPeriod"]; ok {
+		if period, err := strconv.Atoi(val); err == nil {
+			queue.MessageRetentionPeriod = period
+		}
+	}
+	if val, ok := attributes["DelaySeconds"]; ok {
+		if delay, err := strconv.Atoi(val); err == nil {
+			queue.DelaySeconds = delay
+		}
+	}
+
+	// Update queue in storage
+	if err := h.storage.UpdateQueueAttributes(r.Context(), queueName, attributes); err != nil {
+		h.writeErrorResponse(w, "InternalError", "Failed to update queue attributes", http.StatusInternalServerError)
+		return
+	}
+
 	response := SQSResponse{
 		RequestId: uuid.New().String(),
 	}
@@ -1081,40 +1054,6 @@ func (h *SQSHandler) writeJSONResponse(w http.ResponseWriter, response interface
 	json.NewEncoder(w).Encode(response)
 }
 
-// JSON Protocol Handler
-func (h *SQSHandler) handleJSONRequest(w http.ResponseWriter, r *http.Request) {
-	// Extract action from x-amz-target header
-	target := r.Header.Get("x-amz-target")
-	if target == "" {
-		h.writeJSONErrorResponse(w, "InvalidAction", "Missing x-amz-target header", http.StatusBadRequest)
-		return
-	}
-
-	// Parse action from target (e.g., "AmazonSQS.SendMessage" -> "SendMessage")
-	parts := strings.Split(target, ".")
-	if len(parts) != 2 || parts[0] != "AmazonSQS" {
-		h.writeJSONErrorResponse(w, "InvalidAction", fmt.Sprintf("Invalid target: %s", target), http.StatusBadRequest)
-		return
-	}
-	action := parts[1]
-
-	// Route to appropriate handler based on action
-	switch action {
-	case "SendMessage":
-		h.handleJSONSendMessage(w, r)
-	case "SendMessageBatch":
-		h.handleJSONSendMessageBatch(w, r)
-	case "ReceiveMessage":
-		h.handleJSONReceiveMessage(w, r)
-	case "DeleteMessage":
-		h.handleJSONDeleteMessage(w, r)
-	case "DeleteMessageBatch":
-		h.handleJSONDeleteMessageBatch(w, r)
-	default:
-		h.writeJSONErrorResponse(w, "InvalidAction", fmt.Sprintf("Unsupported action: %s", action), http.StatusBadRequest)
-	}
-}
-
 // JSON SendMessage Handler
 func (h *SQSHandler) handleJSONSendMessage(w http.ResponseWriter, r *http.Request) {
 	var req JSONSendMessageRequest
@@ -1184,20 +1123,47 @@ func (h *SQSHandler) handleJSONSendMessage(w http.ResponseWriter, r *http.Reques
 
 	// Handle FIFO queue logic
 	if strings.HasSuffix(queueName, ".fifo") {
-		if req.MessageGroupId == "" {
-			h.writeJSONErrorResponse(w, "MissingParameter", "MessageGroupId is required for FIFO queues", http.StatusBadRequest)
+		// Get queue details for validation
+		queue, err := h.storage.GetQueue(ctx, queueName)
+		if err != nil {
+			h.writeJSONErrorResponse(w, "QueueDoesNotExist", "Queue does not exist", http.StatusBadRequest)
 			return
 		}
 
-		// Set deduplication ID if not provided (use body hash)
-		if req.MessageDeduplicationId == "" {
-			message.MessageDeduplicationId = md5Hex
+		// Use existing FIFO validation
+		if err := ValidateFifoMessage(message, queue); err != nil {
+			h.writeJSONErrorResponse(w, "InvalidParameterValue", err.Error(), http.StatusBadRequest)
+			return
 		}
 
-		// For FIFO, we'll use a simple incremental sequence number
-		// In a real implementation, this would be more sophisticated
-		sequenceNumber := fmt.Sprintf("%d", time.Now().UnixNano())
-		message.SequenceNumber = sequenceNumber
+		// Prepare FIFO message (sequence numbers, deduplication, etc.)
+		if err := PrepareFifoMessage(message, queue); err != nil {
+			h.writeJSONErrorResponse(w, "InternalError", err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Check for duplicate messages
+		if message.DeduplicationHash != "" {
+			isDuplicate, err := CheckForDuplicateMessage(ctx, h.storage, queueName, message.DeduplicationHash)
+			if err != nil {
+				h.writeJSONErrorResponse(w, "InternalError", "Failed to check for duplicates", http.StatusInternalServerError)
+				return
+			}
+
+			if isDuplicate {
+				// For duplicates, return success but don't actually send the message
+				resp := JSONSendMessageResponse{
+					MessageId:              messageID,
+					MD5OfMessageBody:       md5Hex,
+					MD5OfMessageAttributes: message.MD5OfAttributes,
+					MessageDeduplicationId: message.MessageDeduplicationId,
+					MessageGroupId:         message.MessageGroupId,
+					SequenceNumber:         message.SequenceNumber,
+				}
+				h.writeJSONResponse(w, resp)
+				return
+			}
+		}
 	}
 
 	// Send the message
@@ -1245,7 +1211,7 @@ func (h *SQSHandler) handleJSONReceiveMessage(w http.ResponseWriter, r *http.Req
 	}
 
 	ctx := context.Background()
-	messages, err := h.storage.ReceiveMessages(ctx, queueName, maxMessages, visibilityTimeout, 0)
+	messages, err := h.storage.ReceiveMessages(ctx, queueName, maxMessages, 0, visibilityTimeout)
 	if err != nil {
 		h.writeJSONErrorResponse(w, "InternalError", "Failed to receive messages", http.StatusInternalServerError)
 		return
@@ -1253,13 +1219,31 @@ func (h *SQSHandler) handleJSONReceiveMessage(w http.ResponseWriter, r *http.Req
 
 	var jsonMessages []JSONMessage
 	for _, msg := range messages {
-		// Convert storage message attributes to JSON format
+		// Convert storage message attributes to JSON format, but only include requested ones
 		jsonAttrs := make(map[string]JSONMessageAttribute)
-		for k, v := range msg.MessageAttributes {
-			jsonAttrs[k] = JSONMessageAttribute{
-				DataType:    v.DataType,
-				StringValue: v.StringValue,
-				BinaryValue: v.BinaryValue,
+
+		// Only include MessageAttributes if they were requested
+		if len(req.MessageAttributeNames) > 0 {
+			includeAll := false
+			requestedAttrs := make(map[string]bool)
+
+			for _, attrName := range req.MessageAttributeNames {
+				if attrName == "All" {
+					includeAll = true
+					break
+				}
+				requestedAttrs[attrName] = true
+			}
+
+			// Add requested message attributes
+			for k, v := range msg.MessageAttributes {
+				if includeAll || requestedAttrs[k] {
+					jsonAttrs[k] = JSONMessageAttribute{
+						DataType:    v.DataType,
+						StringValue: v.StringValue,
+						BinaryValue: v.BinaryValue,
+					}
+				}
 			}
 		}
 
@@ -1336,10 +1320,10 @@ func (h *SQSHandler) handleJSONDeleteMessageBatch(w http.ResponseWriter, r *http
 		return
 	}
 
-	// Extract receipt handles from entries
-	var receiptHandles []string
+	// Process each entry individually to handle partial failures
 	var successful []JSONBatchResultEntry
 	var failed []JSONBatchResultErrorEntry
+	ctx := context.Background()
 
 	for _, entry := range req.Entries {
 		if entry.Id == "" || entry.ReceiptHandle == "" {
@@ -1351,18 +1335,19 @@ func (h *SQSHandler) handleJSONDeleteMessageBatch(w http.ResponseWriter, r *http
 			})
 			continue
 		}
-		receiptHandles = append(receiptHandles, entry.ReceiptHandle)
-		successful = append(successful, JSONBatchResultEntry{
-			Id: entry.Id,
-		})
-	}
 
-	// If we have valid receipt handles, delete them
-	if len(receiptHandles) > 0 {
-		ctx := context.Background()
-		if err := h.storage.DeleteMessageBatch(ctx, queueName, receiptHandles); err != nil {
-			h.writeJSONErrorResponse(w, "InternalError", "Failed to delete message batch", http.StatusInternalServerError)
-			return
+		// Try to delete this specific message
+		if err := h.storage.DeleteMessage(ctx, queueName, entry.ReceiptHandle); err != nil {
+			failed = append(failed, JSONBatchResultErrorEntry{
+				Id:          entry.Id,
+				Code:        "ReceiptHandleIsInvalid",
+				Message:     "The specified receipt handle is not valid",
+				SenderFault: true,
+			})
+		} else {
+			successful = append(successful, JSONBatchResultEntry{
+				Id: entry.Id,
+			})
 		}
 	}
 
@@ -1653,78 +1638,6 @@ func (h *SQSHandler) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleAPIRoutes handles REST API endpoints for dashboard operations
-func (h *SQSHandler) handleAPIRoutes(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-
-	if r.Method == http.MethodOptions {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	switch r.URL.Path {
-	case "/api/status":
-		if r.Method == http.MethodGet {
-			h.handleAPIStatus(w, r)
-		} else {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	case "/api/queues":
-		if r.Method == http.MethodGet {
-			h.handleAPIListQueues(w, r)
-		} else if r.Method == http.MethodPost {
-			h.handleAPICreateQueue(w, r)
-		} else {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	case "/api/messages":
-		if r.Method == http.MethodPost {
-			h.handleAPISendMessage(w, r)
-		} else {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	case "/api/messages/poll":
-		if r.Method == http.MethodPost {
-			h.handleAPIPollMessages(w, r)
-		} else {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	case "/api/messages/send":
-		if r.Method == http.MethodPost {
-			h.handleAPISendMessage(w, r)
-		} else {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	case "/api/messages/delete":
-		if r.Method == http.MethodDelete {
-			h.handleAPIDeleteMessage(w, r)
-		} else {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	default:
-		if strings.HasPrefix(r.URL.Path, "/api/queues/") {
-			if strings.HasSuffix(r.URL.Path, "/messages") {
-				if r.Method == http.MethodGet {
-					h.handleAPIGetQueueMessages(w, r)
-				} else {
-					http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-				}
-			} else {
-				// Handle individual queue operations like DELETE /api/queues/{name}
-				if r.Method == http.MethodDelete {
-					h.handleAPIDeleteQueue(w, r)
-				} else {
-					http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-				}
-			}
-		} else {
-			http.Error(w, "Not found", http.StatusNotFound)
-		}
-	}
-}
-
 // API handlers for dashboard operations
 func (h *SQSHandler) handleAPIListQueues(w http.ResponseWriter, r *http.Request) {
 	queues, err := h.storage.ListQueues(r.Context(), "")
@@ -1941,4 +1854,285 @@ func (h *SQSHandler) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"status": "healthy", "service": "sqs-bridge"}`))
+}
+
+// JSON CreateQueue Handler
+func (h *SQSHandler) handleJSONCreateQueue(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		QueueName  string            `json:"QueueName"`
+		Attributes map[string]string `json:"Attributes,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeJSONErrorResponse(w, "InvalidRequest", "Failed to parse JSON request", http.StatusBadRequest)
+		return
+	}
+
+	if req.QueueName == "" {
+		h.writeJSONErrorResponse(w, "MissingParameter", "QueueName is required", http.StatusBadRequest)
+		return
+	}
+
+	// Create queue object (similar to form handler)
+	queue := &storage.Queue{
+		Name:                          req.QueueName,
+		URL:                           fmt.Sprintf("%s/%s", h.baseURL, req.QueueName),
+		Attributes:                    req.Attributes,
+		VisibilityTimeoutSeconds:      30,
+		MessageRetentionPeriod:        1209600, // 14 days
+		MaxReceiveCount:               0,
+		DelaySeconds:                  0,
+		ReceiveMessageWaitTimeSeconds: 0,
+		CreatedAt:                     time.Now(),
+	}
+
+	// Parse standard attributes (similar to form handler)
+	if req.Attributes != nil {
+		if val, ok := req.Attributes["VisibilityTimeout"]; ok {
+			if timeout, err := strconv.Atoi(val); err == nil {
+				queue.VisibilityTimeoutSeconds = timeout
+			}
+		}
+		if val, ok := req.Attributes["MessageRetentionPeriod"]; ok {
+			if period, err := strconv.Atoi(val); err == nil {
+				queue.MessageRetentionPeriod = period
+			}
+		}
+		if val, ok := req.Attributes["FifoQueue"]; ok {
+			queue.FifoQueue = (val == "true")
+		}
+		if val, ok := req.Attributes["ContentBasedDeduplication"]; ok {
+			queue.ContentBasedDeduplication = (val == "true")
+		}
+	}
+
+	// Setup FIFO queue configuration
+	if err := SetupFifoQueue(queue); err != nil {
+		h.writeJSONErrorResponse(w, "InvalidParameterValue", err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := h.storage.CreateQueue(r.Context(), queue); err != nil {
+		h.writeJSONErrorResponse(w, "QueueAlreadyExists", "Queue already exists", http.StatusBadRequest)
+		return
+	}
+
+	resp := map[string]string{
+		"QueueUrl": queue.URL,
+	}
+	h.writeJSONResponse(w, resp)
+}
+
+// JSON DeleteQueue Handler
+func (h *SQSHandler) handleJSONDeleteQueue(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		QueueUrl string `json:"QueueUrl"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeJSONErrorResponse(w, "InvalidRequest", "Failed to parse JSON request", http.StatusBadRequest)
+		return
+	}
+
+	queueName := h.extractQueueNameFromURL(req.QueueUrl)
+	if err := h.storage.DeleteQueue(r.Context(), queueName); err != nil {
+		h.writeJSONErrorResponse(w, "QueueDoesNotExist", "Queue does not exist", http.StatusBadRequest)
+		return
+	}
+
+	h.writeJSONResponse(w, map[string]interface{}{})
+}
+
+// JSON ListQueues Handler
+func (h *SQSHandler) handleJSONListQueues(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		QueueNamePrefix string `json:"QueueNamePrefix,omitempty"`
+	}
+	json.NewDecoder(r.Body).Decode(&req) // Ignore error for optional body
+
+	queues, err := h.storage.ListQueues(r.Context(), req.QueueNamePrefix)
+	if err != nil {
+		h.writeJSONErrorResponse(w, "InternalError", "Failed to list queues", http.StatusInternalServerError)
+		return
+	}
+
+	var queueURLs []string
+	for _, queue := range queues {
+		queueURLs = append(queueURLs, queue.URL)
+	}
+
+	resp := map[string][]string{
+		"QueueUrls": queueURLs,
+	}
+	h.writeJSONResponse(w, resp)
+}
+
+// JSON GetQueueUrl Handler
+func (h *SQSHandler) handleJSONGetQueueUrl(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		QueueName string `json:"QueueName"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeJSONErrorResponse(w, "InvalidRequest", "Failed to parse JSON request", http.StatusBadRequest)
+		return
+	}
+
+	queue, err := h.storage.GetQueue(r.Context(), req.QueueName)
+	if err != nil || queue == nil {
+		h.writeJSONErrorResponse(w, "QueueDoesNotExist", "Queue does not exist", http.StatusBadRequest)
+		return
+	}
+
+	resp := map[string]string{
+		"QueueUrl": queue.URL,
+	}
+	h.writeJSONResponse(w, resp)
+}
+
+// JSON ChangeMessageVisibility Handler
+func (h *SQSHandler) handleJSONChangeMessageVisibility(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		QueueUrl          string `json:"QueueUrl"`
+		ReceiptHandle     string `json:"ReceiptHandle"`
+		VisibilityTimeout int    `json:"VisibilityTimeout"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeJSONErrorResponse(w, "InvalidRequest", "Failed to parse JSON request", http.StatusBadRequest)
+		return
+	}
+
+	queueName := h.extractQueueNameFromURL(req.QueueUrl)
+	if err := h.storage.ChangeMessageVisibility(r.Context(), queueName, req.ReceiptHandle, req.VisibilityTimeout); err != nil {
+		h.writeJSONErrorResponse(w, "InternalError", "Failed to change message visibility", http.StatusInternalServerError)
+		return
+	}
+
+	h.writeJSONResponse(w, map[string]interface{}{})
+}
+
+// JSON ChangeMessageVisibilityBatch Handler
+func (h *SQSHandler) handleJSONChangeMessageVisibilityBatch(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		QueueUrl string `json:"QueueUrl"`
+		Entries  []struct {
+			Id                string `json:"Id"`
+			ReceiptHandle     string `json:"ReceiptHandle"`
+			VisibilityTimeout int    `json:"VisibilityTimeout"`
+		} `json:"Entries"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeJSONErrorResponse(w, "InvalidRequest", "Failed to parse JSON request", http.StatusBadRequest)
+		return
+	}
+
+	queueName := h.extractQueueNameFromURL(req.QueueUrl)
+
+	var visibilityEntries []storage.VisibilityEntry
+	var successful []JSONBatchResultEntry
+
+	for _, entry := range req.Entries {
+		visibilityEntries = append(visibilityEntries, storage.VisibilityEntry{
+			ReceiptHandle:     entry.ReceiptHandle,
+			VisibilityTimeout: entry.VisibilityTimeout,
+		})
+		successful = append(successful, JSONBatchResultEntry{Id: entry.Id})
+	}
+
+	if err := h.storage.ChangeMessageVisibilityBatch(r.Context(), queueName, visibilityEntries); err != nil {
+		h.writeJSONErrorResponse(w, "InternalError", "Failed to change message visibility batch", http.StatusInternalServerError)
+		return
+	}
+
+	resp := map[string][]JSONBatchResultEntry{
+		"Successful": successful,
+	}
+	h.writeJSONResponse(w, resp)
+}
+
+// JSON GetQueueAttributes Handler
+func (h *SQSHandler) handleJSONGetQueueAttributes(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		QueueUrl       string   `json:"QueueUrl"`
+		AttributeNames []string `json:"AttributeNames,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeJSONErrorResponse(w, "InvalidRequest", "Failed to parse JSON request", http.StatusBadRequest)
+		return
+	}
+
+	queueName := h.extractQueueNameFromURL(req.QueueUrl)
+	queue, err := h.storage.GetQueue(r.Context(), queueName)
+	if err != nil || queue == nil {
+		h.writeJSONErrorResponse(w, "QueueDoesNotExist", "Queue does not exist", http.StatusBadRequest)
+		return
+	}
+
+	// Default to "All" if no attributes specified
+	if len(req.AttributeNames) == 0 {
+		req.AttributeNames = []string{"All"}
+	}
+
+	// Generate attributes (reuse existing logic)
+	attributes, err := h.generateQueueAttributes(r.Context(), queue, req.AttributeNames)
+	if err != nil {
+		h.writeJSONErrorResponse(w, "InternalError", "Failed to generate queue attributes", http.StatusInternalServerError)
+		return
+	}
+
+	// Convert to map format for JSON
+	attrMap := make(map[string]string)
+	for _, attr := range attributes {
+		attrMap[attr.Name] = attr.Value
+	}
+
+	resp := map[string]map[string]string{
+		"Attributes": attrMap,
+	}
+	h.writeJSONResponse(w, resp)
+}
+
+// JSON SetQueueAttributes Handler
+func (h *SQSHandler) handleJSONSetQueueAttributes(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		QueueUrl   string            `json:"QueueUrl"`
+		Attributes map[string]string `json:"Attributes"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeJSONErrorResponse(w, "InvalidRequest", "Failed to parse JSON request", http.StatusBadRequest)
+		return
+	}
+
+	queueName := h.extractQueueNameFromURL(req.QueueUrl)
+
+	// Check if queue exists
+	queue, err := h.storage.GetQueue(r.Context(), queueName)
+	if err != nil || queue == nil {
+		h.writeJSONErrorResponse(w, "QueueDoesNotExist", "Queue does not exist", http.StatusBadRequest)
+		return
+	}
+
+	// Update queue attributes using storage interface
+	if err := h.storage.UpdateQueueAttributes(r.Context(), queueName, req.Attributes); err != nil {
+		h.writeJSONErrorResponse(w, "InternalError", "Failed to update queue attributes", http.StatusInternalServerError)
+		return
+	}
+
+	h.writeJSONResponse(w, map[string]interface{}{})
+}
+
+// JSON PurgeQueue Handler
+func (h *SQSHandler) handleJSONPurgeQueue(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		QueueUrl string `json:"QueueUrl"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeJSONErrorResponse(w, "InvalidRequest", "Failed to parse JSON request", http.StatusBadRequest)
+		return
+	}
+
+	queueName := h.extractQueueNameFromURL(req.QueueUrl)
+	if err := h.storage.PurgeQueue(r.Context(), queueName); err != nil {
+		h.writeJSONErrorResponse(w, "InternalError", "Failed to purge queue", http.StatusInternalServerError)
+		return
+	}
+
+	h.writeJSONResponse(w, map[string]interface{}{})
 }

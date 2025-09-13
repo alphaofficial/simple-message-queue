@@ -7,6 +7,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -325,6 +327,7 @@ func (s *PostgreSQLStorage) ReceiveMessages(ctx context.Context, queueName strin
 			       message_group_id, message_deduplication_id, sequence_number, deduplication_hash
 			FROM %s.messages 
 			WHERE queue_name = $1 AND (visibility_timeout IS NULL OR visibility_timeout <= $2)
+			      AND (delay_seconds = 0 OR created_at + INTERVAL '1 second' * delay_seconds <= $2)
 			ORDER BY message_group_id ASC, sequence_number ASC
 			LIMIT $3
 			FOR UPDATE SKIP LOCKED
@@ -338,6 +341,7 @@ func (s *PostgreSQLStorage) ReceiveMessages(ctx context.Context, queueName strin
 			       message_group_id, message_deduplication_id, sequence_number, deduplication_hash
 			FROM %s.messages 
 			WHERE queue_name = $1 AND (visibility_timeout IS NULL OR visibility_timeout <= $2)
+			      AND (delay_seconds = 0 OR created_at + INTERVAL '1 second' * delay_seconds <= $2)
 			ORDER BY created_at ASC
 			LIMIT $3
 			FOR UPDATE SKIP LOCKED
@@ -352,7 +356,6 @@ func (s *PostgreSQLStorage) ReceiveMessages(ctx context.Context, queueName strin
 
 	var messages []*storage.Message
 	var messageIDs []string
-	var currentMessageGroupId string
 
 	for rows.Next() {
 		var message storage.Message
@@ -396,18 +399,6 @@ func (s *PostgreSQLStorage) ReceiveMessages(ctx context.Context, queueName strin
 			message.DeduplicationHash = deduplicationHash.String
 		}
 
-		// For FIFO queues, ensure we only return messages from the same message group
-		// to maintain strict ordering within the group
-		if isFifoQueue {
-			if currentMessageGroupId == "" {
-				// First message - set the message group
-				currentMessageGroupId = message.MessageGroupId
-			} else if currentMessageGroupId != message.MessageGroupId {
-				// Different message group - stop here to maintain ordering
-				break
-			}
-		}
-
 		// Update for return
 		message.ReceiveCount++
 		message.ReceiptHandle = uuid.New().String()
@@ -449,8 +440,22 @@ func (s *PostgreSQLStorage) ReceiveMessages(ctx context.Context, queueName strin
 
 func (s *PostgreSQLStorage) DeleteMessage(ctx context.Context, queueName, receiptHandle string) error {
 	query := fmt.Sprintf(`DELETE FROM %s.messages WHERE queue_name = $1 AND receipt_handle = $2`, pq.QuoteIdentifier(s.schema))
-	_, err := s.db.ExecContext(ctx, query, queueName, receiptHandle)
-	return err
+	result, err := s.db.ExecContext(ctx, query, queueName, receiptHandle)
+	if err != nil {
+		return err
+	}
+
+	// Check if any rows were actually deleted
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("receipt handle not found")
+	}
+
+	return nil
 }
 
 func (s *PostgreSQLStorage) DeleteMessageBatch(ctx context.Context, queueName string, receiptHandles []string) error {
@@ -672,10 +677,63 @@ func (s *PostgreSQLStorage) SendMessageBatch(ctx context.Context, messages []*st
 }
 
 func (s *PostgreSQLStorage) UpdateQueueAttributes(ctx context.Context, queueName string, attributes map[string]string) error {
-	attributesJSON, _ := json.Marshal(attributes)
+	// Build SET clauses for attributes that have dedicated columns
+	setClauses := []string{}
+	args := []interface{}{}
+	argIndex := 1
 
-	query := fmt.Sprintf(`UPDATE %s.queues SET attributes = $1 WHERE name = $2`, pq.QuoteIdentifier(s.schema))
-	_, err := s.db.ExecContext(ctx, query, string(attributesJSON), queueName)
+	// Update dedicated columns based on attributes
+	if val, ok := attributes["VisibilityTimeout"]; ok {
+		if timeout, err := strconv.Atoi(val); err == nil {
+			setClauses = append(setClauses, fmt.Sprintf("visibility_timeout_seconds = $%d", argIndex))
+			args = append(args, timeout)
+			argIndex++
+		}
+	}
+
+	if val, ok := attributes["MessageRetentionPeriod"]; ok {
+		if period, err := strconv.Atoi(val); err == nil {
+			setClauses = append(setClauses, fmt.Sprintf("message_retention_period = $%d", argIndex))
+			args = append(args, period)
+			argIndex++
+		}
+	}
+
+	if val, ok := attributes["DelaySeconds"]; ok {
+		if delay, err := strconv.Atoi(val); err == nil {
+			setClauses = append(setClauses, fmt.Sprintf("delay_seconds = $%d", argIndex))
+			args = append(args, delay)
+			argIndex++
+		}
+	}
+
+	if val, ok := attributes["MaxReceiveCount"]; ok {
+		if count, err := strconv.Atoi(val); err == nil {
+			setClauses = append(setClauses, fmt.Sprintf("max_receive_count = $%d", argIndex))
+			args = append(args, count)
+			argIndex++
+		}
+	}
+
+	// Always update the attributes JSON
+	attributesJSON, _ := json.Marshal(attributes)
+	setClauses = append(setClauses, fmt.Sprintf("attributes = $%d", argIndex))
+	args = append(args, string(attributesJSON))
+	argIndex++
+
+	// Add queue name for WHERE clause
+	args = append(args, queueName)
+
+	if len(setClauses) == 0 {
+		return nil // Nothing to update
+	}
+
+	query := fmt.Sprintf(`UPDATE %s.queues SET %s WHERE name = $%d`,
+		pq.QuoteIdentifier(s.schema),
+		strings.Join(setClauses, ", "),
+		argIndex)
+
+	_, err := s.db.ExecContext(ctx, query, args...)
 
 	if err != nil {
 		return fmt.Errorf("failed to update queue attributes: %w", err)

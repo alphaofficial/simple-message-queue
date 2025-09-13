@@ -7,6 +7,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -185,10 +187,53 @@ func (s *SQLiteStorage) GetQueue(ctx context.Context, queueName string) (*storag
 }
 
 func (s *SQLiteStorage) UpdateQueueAttributes(ctx context.Context, queueName string, attributes map[string]string) error {
-	attributesJSON, _ := json.Marshal(attributes)
+	// Build SET clauses for attributes that have dedicated columns
+	setClauses := []string{}
+	args := []interface{}{}
 
-	query := `UPDATE queues SET attributes = ? WHERE name = ?`
-	_, err := s.db.ExecContext(ctx, query, string(attributesJSON), queueName)
+	// Update dedicated columns based on attributes
+	if val, ok := attributes["VisibilityTimeout"]; ok {
+		if timeout, err := strconv.Atoi(val); err == nil {
+			setClauses = append(setClauses, "visibility_timeout_seconds = ?")
+			args = append(args, timeout)
+		}
+	}
+
+	if val, ok := attributes["MessageRetentionPeriod"]; ok {
+		if period, err := strconv.Atoi(val); err == nil {
+			setClauses = append(setClauses, "message_retention_period = ?")
+			args = append(args, period)
+		}
+	}
+
+	if val, ok := attributes["DelaySeconds"]; ok {
+		if delay, err := strconv.Atoi(val); err == nil {
+			setClauses = append(setClauses, "delay_seconds = ?")
+			args = append(args, delay)
+		}
+	}
+
+	if val, ok := attributes["MaxReceiveCount"]; ok {
+		if count, err := strconv.Atoi(val); err == nil {
+			setClauses = append(setClauses, "max_receive_count = ?")
+			args = append(args, count)
+		}
+	}
+
+	// Always update the attributes JSON
+	attributesJSON, _ := json.Marshal(attributes)
+	setClauses = append(setClauses, "attributes = ?")
+	args = append(args, string(attributesJSON))
+
+	// Add queue name for WHERE clause
+	args = append(args, queueName)
+
+	if len(setClauses) == 0 {
+		return nil // Nothing to update
+	}
+
+	query := `UPDATE queues SET ` + strings.Join(setClauses, ", ") + ` WHERE name = ?`
+	_, err := s.db.ExecContext(ctx, query, args...)
 
 	if err != nil {
 		return fmt.Errorf("failed to update queue attributes: %w", err)
@@ -343,6 +388,7 @@ func (s *SQLiteStorage) ReceiveMessages(ctx context.Context, queueName string, m
 			message_group_id, message_deduplication_id, sequence_number, deduplication_hash
 			FROM messages 
 			WHERE queue_name = ? AND (visibility_timeout IS NULL OR visibility_timeout <= ?)
+			      AND (delay_seconds = 0 OR datetime(created_at, '+' || delay_seconds || ' seconds') <= ?)
 			ORDER BY message_group_id ASC, sequence_number ASC
 			LIMIT ?`
 	} else {
@@ -353,11 +399,12 @@ func (s *SQLiteStorage) ReceiveMessages(ctx context.Context, queueName string, m
 			message_group_id, message_deduplication_id, sequence_number, deduplication_hash
 			FROM messages 
 			WHERE queue_name = ? AND (visibility_timeout IS NULL OR visibility_timeout <= ?)
+			      AND (delay_seconds = 0 OR datetime(created_at, '+' || delay_seconds || ' seconds') <= ?)
 			ORDER BY created_at ASC
 			LIMIT ?`
 	}
 
-	rows, err := tx.QueryContext(ctx, query, queueName, now, maxMessages)
+	rows, err := tx.QueryContext(ctx, query, queueName, now, now, maxMessages)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query messages: %w", err)
 	}
@@ -365,7 +412,6 @@ func (s *SQLiteStorage) ReceiveMessages(ctx context.Context, queueName string, m
 
 	var messages []*storage.Message
 	var messageIDs []string
-	var currentMessageGroupId string
 
 	for rows.Next() {
 		var message storage.Message
@@ -408,18 +454,6 @@ func (s *SQLiteStorage) ReceiveMessages(ctx context.Context, queueName string, m
 			message.DeduplicationHash = deduplicationHash.String
 		}
 
-		// For FIFO queues, ensure we only return messages from the same message group
-		// to maintain strict ordering within the group
-		if isFifoQueue {
-			if currentMessageGroupId == "" {
-				// First message - set the message group
-				currentMessageGroupId = message.MessageGroupId
-			} else if currentMessageGroupId != message.MessageGroupId {
-				// Different message group - stop here to maintain ordering
-				break
-			}
-		}
-
 		// Update for return
 		message.ReceiveCount++
 		message.ReceiptHandle = uuid.New().String()
@@ -458,12 +492,23 @@ func (s *SQLiteStorage) ReceiveMessages(ctx context.Context, queueName string, m
 }
 
 func (s *SQLiteStorage) DeleteMessage(ctx context.Context, queueName string, receiptHandle string) error {
-	_, err := s.db.ExecContext(ctx,
+	result, err := s.db.ExecContext(ctx,
 		"DELETE FROM messages WHERE queue_name = ? AND receipt_handle = ?",
 		queueName, receiptHandle)
 	if err != nil {
 		return fmt.Errorf("failed to delete message: %w", err)
 	}
+
+	// Check if any rows were actually deleted
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("receipt handle not found")
+	}
+
 	return nil
 }
 

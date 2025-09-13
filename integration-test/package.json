@@ -1,0 +1,28 @@
+{
+  "name": "sqs-bridge-integration-tests",
+  "version": "1.0.0",
+  "description": "Integration tests for SQS Bridge using AWS SDK v3 and testcontainers",
+  "private": true,
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:verbose": "jest --verbose",
+    "build": "tsc --noEmit",
+    "clean": "rm -rf node_modules coverage dist"
+  },
+  "dependencies": {
+    "@aws-sdk/client-sqs": "^3.645.0"
+  },
+  "devDependencies": {
+    "@testcontainers/postgresql": "^10.13.0",
+    "testcontainers": "^10.13.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.1",
+    "typescript": "^5.2.2",
+    "@types/jest": "^29.5.5",
+    "@types/node": "^20.8.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
