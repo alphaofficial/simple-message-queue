@@ -2,6 +2,7 @@ package sqlite_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -107,6 +108,30 @@ func TestReceiveMessagesVisibilityTimeout(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Create fresh test messages for each test case to avoid interference
+			testMessages := []*storage.Message{
+				{
+					ID:        fmt.Sprintf("msg-1-%s", tt.name),
+					QueueName: "test-queue",
+					Body:      "Test message 1",
+					CreatedAt: time.Now(),
+				},
+				{
+					ID:        fmt.Sprintf("msg-2-%s", tt.name),
+					QueueName: "test-queue",
+					Body:      "Test message 2",
+					CreatedAt: time.Now(),
+				},
+			}
+
+			// Send the test messages
+			for _, msg := range testMessages {
+				err := store.SendMessage(ctx, msg)
+				if err != nil {
+					t.Fatalf("Failed to send message: %v", err)
+				}
+			}
+
 			// Record time before receiving messages
 			startTime := time.Now()
 
