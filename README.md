@@ -105,7 +105,7 @@ async function receiveMessages() {
 
 ## Dashboard
 
-Access the web dashboard at: **http://localhost:8080/dashboard**
+Access the web dashboard at: **http://localhost:8080**
 
 The dashboard provides:
 - Queue management and monitoring
