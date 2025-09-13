@@ -1,6 +1,6 @@
 # SQS Bridge
 
-A lightweight, SQS-compatible message queue server that supports multiple storage backends including SQLite and PostgreSQL.
+A lightweight, SQS-compatible message queue server that supports storage backends including SQLite and PostgreSQL.
 
 ### Installation
 
