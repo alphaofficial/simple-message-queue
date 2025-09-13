@@ -12,6 +12,7 @@ import (
 	"sqs-bridge/src/api"
 	"sqs-bridge/src/config"
 	"sqs-bridge/src/storage"
+	"sqs-bridge/src/storage/postgres"
 	"sqs-bridge/src/storage/sqlite"
 )
 
@@ -31,7 +32,19 @@ func main() {
 		}
 		log.Printf("Using SQLite storage with database: %s", cfg.SQLiteDBPath)
 	case "postgres":
-		log.Fatalf("PostgreSQL storage adapter not yet implemented")
+		storageInstance, err = postgres.NewPostgreSQLStorage(
+			cfg.PostgresURL,
+			cfg.PostgresHost,
+			cfg.PostgresPort,
+			cfg.PostgresUser,
+			cfg.PostgresPass,
+			cfg.PostgresDB,
+			"", // Use default schema
+		)
+		if err != nil {
+			log.Fatalf("Failed to initialize PostgreSQL storage: %v", err)
+		}
+		log.Printf("Using PostgreSQL storage with database: %s", cfg.PostgresDB)
 	default:
 		log.Fatalf("Unknown storage adapter: %s. Supported adapters: sqlite, postgres", cfg.StorageType)
 	}

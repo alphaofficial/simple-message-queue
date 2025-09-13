@@ -15,33 +15,51 @@ cd sqs-bridge
 go mod download
 ```
 
-## Build Instructions
+## Usage
 
-### Development
+### Docker
+
+#### SQLite (Default)
 ```bash
+# Quick start with SQLite storage
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+```
+
+#### PostgreSQL
+```bash
+# Run with PostgreSQL storage
+docker-compose -f docker-compose.postgres.yml up -d
+
+# View logs
+docker-compose -f docker-compose.postgres.yml logs -f
+```
+
+The server will be available at `http://localhost:8080`
+
+### Local Development
+
+```bash
+# Install dependencies
+go mod download
+
+# Run with SQLite (default)
 go run main.go
+
+# Run with PostgreSQL (requires DATABASE_URL)
+STORAGE_ADAPTER=postgres DATABASE_URL="postgres://user:pass@localhost/db" go run main.go
 ```
 
-### Production Build
-```bash
-go build -o sqs-bridge main.go
-./sqs-bridge
-```
+### Configuration
 
-### Docker (optional)
-```dockerfile
-FROM golang:1.21.5-alpine AS builder
-WORKDIR /app
-COPY . .
-RUN go build -o sqs-bridge main.go
-
-FROM alpine:latest
-RUN apk --no-cache add ca-certificates
-WORKDIR /root/
-COPY --from=builder /app/sqs-bridge .
-EXPOSE 8080
-CMD ["./sqs-bridge"]
-```
+Environment variables:
+- `STORAGE_ADAPTER`: `sqlite` (default) or `postgres`
+- `SQLITE_DB_PATH`: Path to SQLite database file (default: `./sqs.db`)
+- `DATABASE_URL`: PostgreSQL connection string (for postgres adapter)
+- `PORT`: Server port (default: `8080`)
+- `BASE_URL`: Base URL for queue URLs (default: `http://localhost:PORT`)
 
 ## Example Usage
 

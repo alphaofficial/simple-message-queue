@@ -13,6 +13,7 @@ services:
       - sqs_data:/app/data
     environment:
       - PORT=8080
+      - STORAGE_ADAPTER=sqlite
       - SQLITE_DB_PATH=/app/data/sqs.db
       - BASE_URL=http://localhost:8080
       - GIN_MODE=release
