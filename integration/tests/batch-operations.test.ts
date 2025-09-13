@@ -84,7 +84,7 @@ describe("SQS Batch Operations", () => {
           }
         },
         {
-          Id: "msg-attr-2", 
+          Id: "msg-attr-2",
           MessageBody: "Another message with attributes",
           MessageAttributes: {
             "TestNumber": {
