@@ -57,6 +57,7 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
+            padding-left: 1.5em;
         }
 
         .header h1 {
@@ -660,10 +661,10 @@
         <div class="controls">
             <div class="control-group">
                 <button class="btn" onclick="refreshData()">
-                    🔄 Refresh
+                    Refresh
                 </button>
                 <button class="btn btn-secondary" onclick="showCreateQueueModal()">
-                    ➕ Create Queue
+                    Create Queue
                 </button>
             </div>
             <div class="control-group">
@@ -692,24 +693,18 @@
                 <div class="metric-value" id="messagesInFlight">-</div>
                 <div class="metric-subtitle">Currently processing</div>
             </div>
-
-            <div class="metric-card">
-                <div class="metric-title">FIFO Queues</div>
-                <div class="metric-value" id="fifoQueues">-</div>
-                <div class="metric-subtitle">Ordered delivery queues</div>
-            </div>
         </div>
 
         <div class="tabs">
-            <button class="tab active" onclick="switchTab('queues')">🗂️ Queues</button>
-            <button class="tab" onclick="switchTab('messages')">💬 Messages</button>
-            <button class="tab" onclick="switchTab('send')">📤 Send Message</button>
+            <button class="tab active" onclick="switchTab('queues')">Queues</button>
+            <button class="tab" onclick="switchTab('messages')">Messages</button>
+            <button class="tab" onclick="switchTab('send')">Send Message</button>
         </div>
 
         <div id="queues-tab" class="tab-content active">
             <div class="section">
                 <div class="section-header">
-                    <div class="section-title">🗂️ Message Queues</div>
+                    <div class="section-title">Message Queues</div>
                 </div>
                 <div class="section-content">
                     <div class="queue-grid" id="queueList">
@@ -722,20 +717,20 @@
         <div id="messages-tab" class="tab-content">
             <div class="section">
                 <div class="section-header">
-                    <div class="section-title">💬 Message Browser</div>
+                    <div class="section-title">Message Browser</div>
                     <div class="control-group">
                         <select id="messageQueueSelect" class="form-select" style="width: 180px;" onchange="loadMessagesForQueue()">
                             <option value="">Select queue...</option>
                         </select>
                         <button class="btn btn-secondary btn-sm" onclick="pollMessages()">
-                            📥 Poll Messages
+                            Poll Messages
                         </button>
                     </div>
                 </div>
                 <div class="section-content">
                     <div id="messagesList">
                         <div class="empty-state">
-                            <div class="empty-state-icon">💬</div>
+                            <div class="empty-state-icon"></div>
                             <h3>No messages loaded</h3>
                             <p>Select a queue and poll messages to view them</p>
                         </div>
@@ -747,7 +742,7 @@
         <div id="send-tab" class="tab-content">
             <div class="section">
                 <div class="section-header">
-                    <div class="section-title">📤 Send Message</div>
+                    <div class="section-title">Send Message</div>
                 </div>
                 <div class="section-content">
                     <form class="send-message-form" onsubmit="sendMessage(event)">
@@ -778,7 +773,7 @@
                                 required></textarea>
                         </div>
                         <button type="submit" class="btn">
-                            📤 Send Message
+                            Send Message
                         </button>
                     </form>
                 </div>
@@ -858,8 +853,6 @@
 
                 // Update metrics
                 document.getElementById('totalQueues').textContent = currentQueues.length;
-                const fifoCount = currentQueues.filter(q => q.name.endsWith('.fifo')).length;
-                document.getElementById('fifoQueues').textContent = fifoCount;
 
                 updateQueueSelects();
                 displayQueues();
@@ -868,7 +861,7 @@
                 console.error('Failed to load queues:', error);
                 document.getElementById('queueList').innerHTML = `
                     <div class="empty-state" style="color: var(--accent-red);">
-                        <div class="empty-state-icon">⚠️</div>
+                        <div class="empty-state-icon"></div>
                         <h3>Failed to load queues</h3>
                         <p>Unable to connect to the SQS service</p>
                     </div>
@@ -892,10 +885,10 @@
                                 </div>
                                 <div class="queue-actions">
                                     <button class="btn btn-secondary btn-sm" onclick="pollQueueMessages('${queue.name}')">
-                                        📥 Poll
+                                        Poll
                                     </button>
                                     <button class="btn btn-danger btn-sm" onclick="deleteQueue('${queue.name}')">
-                                        🗑️ Delete
+                                        Delete
                                     </button>
                                 </div>
                             </div>
@@ -907,11 +900,11 @@
                 }).join('');
             } else {
                 queueList.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon">🗂️</div>
-                        <h3>No queues found</h3>
-                        <p>Create your first queue to get started</p>
-                    </div>
+                        <div class="empty-state">
+                            <div class="empty-state-icon"></div>
+                            <h3>No queues found</h3>
+                            <p>Create your first queue to get started</p>
+                        </div>
                 `;
             }
         }
@@ -1169,7 +1162,7 @@
                         <div class="message-actions">
                             <span class="badge badge-info">Count: ${msg.attributes.ApproximateReceiveCount}</span>
                             <button class="btn btn-danger btn-sm" onclick="deleteMessage('${msg.receiptHandle}')">
-                                🗑️ Delete
+                                Delete
                             </button>
                         </div>
                     </div>
@@ -1177,7 +1170,7 @@
             } else {
                 messagesList.innerHTML = `
                     <div class="empty-state">
-                        <div class="empty-state-icon">📭</div>
+                        <div class="empty-state-icon"></div>
                         <h3>No messages found</h3>
                         <p>This queue is currently empty</p>
                     </div>
