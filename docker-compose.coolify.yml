@@ -15,7 +15,7 @@ services:
       - PORT=8080
       - STORAGE_ADAPTER=sqlite
       - SQLITE_DB_PATH=/app/data/sqs.db
-      - BASE_URL=http://localhost:8080
+      - BASE_URL=http://0.0.0.0:8080
       - GIN_MODE=release
     healthcheck:
       test:
@@ -25,7 +25,7 @@ services:
           "--no-verbose",
           "--tries=1",
           "--spider",
-          "http://localhost:8080/health",
+          "http://0.0.0.0:8080/health",
         ]
       interval: 30s
       timeout: 10s
