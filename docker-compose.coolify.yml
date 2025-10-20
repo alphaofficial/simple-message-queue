@@ -5,7 +5,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: sqs-bridge
     restart: unless-stopped
     volumes:
       - sqs_data:/app/data
@@ -13,7 +12,8 @@ services:
       - PORT=8080
       - STORAGE_ADAPTER=sqlite
       - SQLITE_DB_PATH=/app/data/sqs.db
-      - BASE_URL=http://0.0.0.0:8080
+      - SERVICE_FQDN_SQS_8080
+      - BASE_URL=${SERVICE_URL_SQS}
       - GIN_MODE=release
     healthcheck:
       test:
