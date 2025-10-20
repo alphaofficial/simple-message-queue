@@ -9,7 +9,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    restart: unless-stopped
     volumes:
       - sqs_data:/app/data
     environment:
@@ -33,13 +32,3 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    networks:
-      - sqs-network
-
-volumes:
-  sqs_data:
-    driver: local
-
-networks:
-  sqs-network:
-    driver: bridge
