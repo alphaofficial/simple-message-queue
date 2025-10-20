@@ -5,18 +5,17 @@
 # port: 8080
 
 services:
-  sqs_bridge:
+  app:
     build:
       context: .
       dockerfile: Dockerfile
     volumes:
       - sqs_data:/app/data
     environment:
-      - SERVICE_URL_SQS_BRIDGE_8080
+      - SERVICE_URL_APP_8080
       - PORT=8080
       - STORAGE_ADAPTER=sqlite
       - SQLITE_DB_PATH=/app/data/sqs.db
-      - BASE_URL=$SERVICE_URL_SQS_BRIDGE
       - GIN_MODE=release
     healthcheck:
       test:
@@ -31,4 +30,4 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
