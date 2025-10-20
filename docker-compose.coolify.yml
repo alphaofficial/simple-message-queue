@@ -1,4 +1,8 @@
-version: "3.8"
+# documentation: https://github.com/alphaofficial/sqs-bridge
+# slogan: ✱ sqs sdk compatible queue server with storage adapters for sqlite, postgres databases
+# category: backend
+# tags: queue,sqs,aws sdk compatible,sqlite,postgres,database
+# port: 8080
 
 services:
   sqs-bridge:
