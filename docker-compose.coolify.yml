@@ -1,0 +1,41 @@
+version: "3.8"
+
+services:
+  sqs-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sqs-bridge
+    restart: unless-stopped
+    volumes:
+      - sqs_data:/app/data
+    environment:
+      - PORT=8080
+      - STORAGE_ADAPTER=sqlite
+      - SQLITE_DB_PATH=/app/data/sqs.db
+      - BASE_URL=http://localhost:8080
+      - GIN_MODE=release
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:8080/health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - sqs-network
+
+volumes:
+  sqs_data:
+    driver: local
+
+networks:
+  sqs-network:
+    driver: bridge
