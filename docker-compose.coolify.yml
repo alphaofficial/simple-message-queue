@@ -9,11 +9,11 @@ services:
     volumes:
       - sqs_data:/app/data
     environment:
+      - SERVICE_URL_SQS_BRIDGE_8080
       - PORT=8080
       - STORAGE_ADAPTER=sqlite
       - SQLITE_DB_PATH=/app/data/sqs.db
-      - SERVICE_FQDN_SQS_8080
-      - BASE_URL=${SERVICE_URL_SQS}
+      - BASE_URL=http://localhost:8080
       - GIN_MODE=release
     healthcheck:
       test:
