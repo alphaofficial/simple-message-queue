@@ -16,7 +16,7 @@ services:
       - PORT=8080
       - STORAGE_ADAPTER=sqlite
       - SQLITE_DB_PATH=/app/data/sqs.db
-      - BASE_URL=$SERVICE_FQDN_APPWRITE
+      - BASE_URL=$SERVICE_FQDN_SQS_BRIDGE_8080
       - GIN_MODE=release
     healthcheck:
       test:
