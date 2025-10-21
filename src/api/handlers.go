@@ -82,14 +82,18 @@ func calculateMD5OfMessageAttributes(attrs map[string]storage.MessageAttribute) 
 }
 
 type SQSHandler struct {
-	storage storage.Storage
-	baseURL string
+	storage       storage.Storage
+	baseURL       string
+	adminUsername string
+	adminPassword string
 }
 
-func NewSQSHandler(storage storage.Storage, baseURL string) *SQSHandler {
+func NewSQSHandler(storage storage.Storage, baseURL, adminUsername, adminPassword string) *SQSHandler {
 	return &SQSHandler{
-		storage: storage,
-		baseURL: baseURL,
+		storage:       storage,
+		baseURL:       baseURL,
+		adminUsername: adminUsername,
+		adminPassword: adminPassword,
 	}
 }
 
@@ -1524,6 +1528,124 @@ func convertMessageAttributesToSlice(attrs map[string]storage.MessageAttribute) 
 		})
 	}
 	return result
+}
+
+// Authentication handlers
+func (h *SQSHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		// Check if admin credentials are configured
+		if h.adminUsername == "" || h.adminPassword == "" {
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte(`
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SQS Bridge - Setup Required</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
+        .container { max-width: 500px; margin: 0 auto; background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .error { color: #e74c3c; }
+        .code { background: #f8f9fa; padding: 15px; border-radius: 5px; font-family: monospace; margin: 15px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Setup Required</h1>
+        <p class="error">Admin credentials are not configured.</p>
+        <p>To access the SQS Bridge dashboard, please set the following environment variables:</p>
+        <div class="code">
+ADMIN_USERNAME=your_admin_username<br>
+ADMIN_PASSWORD=your_secure_password
+        </div>
+        <p>Then restart the SQS Bridge service.</p>
+    </div>
+</body>
+</html>`))
+			return
+		}
+
+		// Show login page
+		w.Header().Set("Content-Type", "text/html")
+		html, err := os.ReadFile("src/templates/login.html")
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("Error loading login template"))
+			return
+		}
+		w.Write(html)
+		return
+	}
+
+	if r.Method == http.MethodPost {
+		// Process login
+		username := r.FormValue("username")
+		password := r.FormValue("password")
+
+		// Check credentials
+		if h.adminUsername == "" || h.adminPassword == "" {
+			http.Error(w, "Admin credentials not configured", http.StatusServiceUnavailable)
+			return
+		}
+
+		if username == h.adminUsername && password == h.adminPassword {
+			// Create session cookie
+			http.SetCookie(w, &http.Cookie{
+				Name:     "sqs_session",
+				Value:    "authenticated",
+				Path:     "/",
+				HttpOnly: true,
+				Secure:   false, // Set to true if using HTTPS
+				SameSite: http.SameSiteLaxMode,
+				MaxAge:   24 * 60 * 60, // 24 hours
+			})
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		// Invalid credentials
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	w.WriteHeader(http.StatusMethodNotAllowed)
+}
+
+func (h *SQSHandler) handleLogout(w http.ResponseWriter, r *http.Request) {
+	// Clear session cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     "sqs_session",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		MaxAge:   -1, // Delete cookie
+	})
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+func (h *SQSHandler) isAuthenticated(r *http.Request) bool {
+	// If no admin credentials are configured, deny access
+	if h.adminUsername == "" || h.adminPassword == "" {
+		return false
+	}
+
+	cookie, err := r.Cookie("sqs_session")
+	if err != nil {
+		return false
+	}
+	return cookie.Value == "authenticated"
+}
+
+func (h *SQSHandler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !h.isAuthenticated(r) {
+			// Include current URL as redirect parameter
+			redirectURL := "/login?redirect=" + url.QueryEscape(r.URL.String())
+			http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+			return
+		}
+		next(w, r)
+	}
 }
 
 func (h *SQSHandler) handleDashboard(w http.ResponseWriter, r *http.Request) {

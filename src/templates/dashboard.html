@@ -654,6 +654,9 @@
     <div class="header">
         <div class="header-content">
             <h1>SQS Console</h1>
+            <button class="btn btn-secondary btn-sm" onclick="logout()" style="font-size: 11px; padding: 6px 12px;">
+                Logout
+            </button>
         </div>
     </div>
 
@@ -1263,6 +1266,20 @@
 
         // Initialize
         refreshData();
+
+        // Logout function
+        function logout() {
+            if (confirm('Are you sure you want to logout?')) {
+                fetch('/logout', { method: 'POST' })
+                    .then(() => {
+                        window.location.href = '/login';
+                    })
+                    .catch(err => {
+                        console.error('Logout failed:', err);
+                        window.location.href = '/login';
+                    });
+            }
+        }
 
         // Close modal when clicking outside
         document.getElementById('createQueueModal').addEventListener('click', function(e) {

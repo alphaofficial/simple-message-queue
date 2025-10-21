@@ -53,7 +53,7 @@ func main() {
 	defer storageInstance.Close()
 
 	// Initialize SQS handler
-	sqsHandler := api.NewSQSHandler(storageInstance, cfg.BaseURL)
+	sqsHandler := api.NewSQSHandler(storageInstance, cfg.BaseURL, cfg.AdminUsername, cfg.AdminPassword)
 
 	// Setup Gin router
 	router := gin.New()

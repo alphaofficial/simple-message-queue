@@ -188,7 +188,7 @@ func TestReceiveMessageVisibilityTimeoutFinal(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create fresh storage for each test
 			mockStorage := NewSimpleMockStorage()
-			handler := api.NewSQSHandler(mockStorage, "http://localhost:9324")
+			handler := api.NewSQSHandler(mockStorage, "http://localhost:9324", "test_admin", "test_password")
 
 			// Create test queue
 			queue := &storage.Queue{

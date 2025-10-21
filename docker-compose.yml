@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   sqs-bridge:
@@ -17,8 +17,18 @@ services:
       - SQLITE_DB_PATH=/app/data/sqs.db
       - BASE_URL=http://localhost:8080
       - GIN_MODE=release
+      - ADMIN_USERNAME=root
+      - ADMIN_PASSWORD=password
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:8080/health",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3

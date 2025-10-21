@@ -20,20 +20,26 @@ func (h *SQSHandler) SetupRoutes(router *gin.Engine) {
 	// Health check endpoint
 	router.GET("/health", func(c *gin.Context) { h.handleHealthCheck(c.Writer, c.Request) })
 
-	// Dashboard endpoint
-	router.GET("/", func(c *gin.Context) { h.handleDashboard(c.Writer, c.Request) })
+	// Authentication routes
+	router.GET("/login", func(c *gin.Context) { h.handleLogin(c.Writer, c.Request) })
+	router.POST("/login", func(c *gin.Context) { h.handleLogin(c.Writer, c.Request) })
+	router.POST("/logout", func(c *gin.Context) { h.handleLogout(c.Writer, c.Request) })
 
-	// Dashboard API routes group
+	// Dashboard endpoint (protected)
+	router.GET("/", func(c *gin.Context) { h.requireAuth(h.handleDashboard)(c.Writer, c.Request) })
+
+	// Dashboard API routes group (protected)
 	api := router.Group("/api")
 	{
-		api.GET("/status", func(c *gin.Context) { h.handleAPIStatus(c.Writer, c.Request) })
-		api.GET("/queues", func(c *gin.Context) { h.handleAPIListQueues(c.Writer, c.Request) })
-		api.POST("/queues", func(c *gin.Context) { h.handleAPICreateQueue(c.Writer, c.Request) })
-		api.DELETE("/queues/:name", func(c *gin.Context) { h.handleAPIDeleteQueue(c.Writer, c.Request) })
-		api.POST("/messages", func(c *gin.Context) { h.handleAPISendMessage(c.Writer, c.Request) })
-		api.POST("/messages/poll", func(c *gin.Context) { h.handleAPIPollMessages(c.Writer, c.Request) })
-		api.POST("/messages/send", func(c *gin.Context) { h.handleAPISendMessage(c.Writer, c.Request) })
-		api.GET("/queues/:name/messages", func(c *gin.Context) { h.handleAPIGetQueueMessages(c.Writer, c.Request) })
+		api.GET("/status", func(c *gin.Context) { h.requireAuth(h.handleAPIStatus)(c.Writer, c.Request) })
+		api.GET("/queues", func(c *gin.Context) { h.requireAuth(h.handleAPIListQueues)(c.Writer, c.Request) })
+		api.POST("/queues", func(c *gin.Context) { h.requireAuth(h.handleAPICreateQueue)(c.Writer, c.Request) })
+		api.DELETE("/queues/:name", func(c *gin.Context) { h.requireAuth(h.handleAPIDeleteQueue)(c.Writer, c.Request) })
+		api.POST("/messages", func(c *gin.Context) { h.requireAuth(h.handleAPISendMessage)(c.Writer, c.Request) })
+		api.POST("/messages/poll", func(c *gin.Context) { h.requireAuth(h.handleAPIPollMessages)(c.Writer, c.Request) })
+		api.POST("/messages/send", func(c *gin.Context) { h.requireAuth(h.handleAPISendMessage)(c.Writer, c.Request) })
+		api.DELETE("/messages/delete", func(c *gin.Context) { h.requireAuth(h.handleAPIDeleteMessage)(c.Writer, c.Request) })
+		api.GET("/queues/:name/messages", func(c *gin.Context) { h.requireAuth(h.handleAPIGetQueueMessages)(c.Writer, c.Request) })
 	}
 
 	// SQS protocol endpoint (form-encoded and JSON)
