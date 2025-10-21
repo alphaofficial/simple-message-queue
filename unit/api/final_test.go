@@ -157,6 +157,31 @@ func (m *SimpleMockStorage) Close() error {
 	return nil
 }
 
+// Access key operations (mock implementations)
+func (m *SimpleMockStorage) CreateAccessKey(ctx context.Context, accessKey *storage.AccessKey) error {
+	return nil
+}
+
+func (m *SimpleMockStorage) GetAccessKey(ctx context.Context, accessKeyID string) (*storage.AccessKey, error) {
+	return nil, nil
+}
+
+func (m *SimpleMockStorage) ListAccessKeys(ctx context.Context) ([]*storage.AccessKey, error) {
+	return []*storage.AccessKey{}, nil
+}
+
+func (m *SimpleMockStorage) DeactivateAccessKey(ctx context.Context, accessKeyID string) error {
+	return nil
+}
+
+func (m *SimpleMockStorage) DeleteAccessKey(ctx context.Context, accessKeyID string) error {
+	return nil
+}
+
+func (m *SimpleMockStorage) UpdateAccessKeyUsage(ctx context.Context, accessKeyID string) error {
+	return nil
+}
+
 func TestReceiveMessageVisibilityTimeoutFinal(t *testing.T) {
 	tests := []struct {
 		name              string
@@ -188,7 +213,7 @@ func TestReceiveMessageVisibilityTimeoutFinal(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create fresh storage for each test
 			mockStorage := NewSimpleMockStorage()
-			handler := api.NewSQSHandler(mockStorage, "http://localhost:9324", "test_admin", "test_password")
+			handler := api.NewSQSHandler(mockStorage, "http://localhost:9324", "test_admin", "test_password", false)
 
 			// Create test queue
 			queue := &storage.Queue{

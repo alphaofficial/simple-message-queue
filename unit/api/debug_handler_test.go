@@ -15,7 +15,7 @@ import (
 func TestHandlerDebugging(t *testing.T) {
 	// Create fresh mock storage
 	mockStorage := NewMockStorage()
-	handler := api.NewSQSHandler(mockStorage, "http://localhost:9324", "test_admin", "test_password")
+	handler := api.NewSQSHandler(mockStorage, "http://localhost:9324", "test_admin", "test_password", false)
 
 	// Create test queue
 	queue := &storage.Queue{

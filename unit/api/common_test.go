@@ -162,3 +162,28 @@ func (m *MockStorage) PurgeQueue(ctx context.Context, queueName string) error {
 func (m *MockStorage) Close() error {
 	return nil
 }
+
+// Access key operations (mock implementations)
+func (m *MockStorage) CreateAccessKey(ctx context.Context, accessKey *storage.AccessKey) error {
+	return nil
+}
+
+func (m *MockStorage) GetAccessKey(ctx context.Context, accessKeyID string) (*storage.AccessKey, error) {
+	return nil, nil
+}
+
+func (m *MockStorage) ListAccessKeys(ctx context.Context) ([]*storage.AccessKey, error) {
+	return []*storage.AccessKey{}, nil
+}
+
+func (m *MockStorage) DeactivateAccessKey(ctx context.Context, accessKeyID string) error {
+	return nil
+}
+
+func (m *MockStorage) DeleteAccessKey(ctx context.Context, accessKeyID string) error {
+	return nil
+}
+
+func (m *MockStorage) UpdateAccessKeyUsage(ctx context.Context, accessKeyID string) error {
+	return nil
+}

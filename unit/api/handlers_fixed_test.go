@@ -56,7 +56,7 @@ func TestReceiveMessageVisibilityTimeoutFixed(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create fresh mock storage for each test
 			mockStorage := NewMockStorage()
-			handler := api.NewSQSHandler(mockStorage, "http://localhost:9324", "test_admin", "test_password")
+			handler := api.NewSQSHandler(mockStorage, "http://localhost:9324", "test_admin", "test_password", false)
 
 			// Create test queue
 			queue := &storage.Queue{
@@ -121,7 +121,7 @@ func TestReceiveMessageVisibilityTimeoutFixed(t *testing.T) {
 func TestReceiveMessageParameterHandlingFixed(t *testing.T) {
 	// Create fresh mock storage
 	mockStorage := NewMockStorage()
-	handler := api.NewSQSHandler(mockStorage, "http://localhost:9324", "test_admin", "test_password")
+	handler := api.NewSQSHandler(mockStorage, "http://localhost:9324", "test_admin", "test_password", false)
 
 	// Create test queue
 	queue := &storage.Queue{
