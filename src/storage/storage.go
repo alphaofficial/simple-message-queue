@@ -59,6 +59,16 @@ type Queue struct {
 	FifoThroughputLimit       string // "perQueue" or "perMessageGroupId"
 }
 
+type AccessKey struct {
+	AccessKeyID     string
+	SecretAccessKey string
+	Name            string
+	Description     string
+	Active          bool
+	CreatedAt       time.Time
+	LastUsedAt      *time.Time
+}
+
 type Storage interface {
 	// Queue operations
 	CreateQueue(ctx context.Context, queue *Queue) error
@@ -85,6 +95,14 @@ type Storage interface {
 
 	// Dashboard operations
 	GetInFlightMessages(ctx context.Context, queueName string) ([]*Message, error)
+
+	// Access Key operations
+	CreateAccessKey(ctx context.Context, accessKey *AccessKey) error
+	GetAccessKey(ctx context.Context, accessKeyID string) (*AccessKey, error)
+	ListAccessKeys(ctx context.Context) ([]*AccessKey, error)
+	DeactivateAccessKey(ctx context.Context, accessKeyID string) error
+	DeleteAccessKey(ctx context.Context, accessKeyID string) error
+	UpdateAccessKeyUsage(ctx context.Context, accessKeyID string) error
 
 	// Maintenance
 	PurgeQueue(ctx context.Context, queueName string) error

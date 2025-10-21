@@ -81,12 +81,22 @@ func (s *SQLiteStorage) createTables() error {
 			deduplication_hash TEXT,
 			FOREIGN KEY (queue_name) REFERENCES queues(name) ON DELETE CASCADE
 		)`,
+		`CREATE TABLE IF NOT EXISTS access_keys (
+			access_key_id TEXT PRIMARY KEY,
+			secret_access_key TEXT NOT NULL,
+			name TEXT NOT NULL,
+			description TEXT,
+			active BOOLEAN DEFAULT TRUE,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			last_used_at DATETIME
+		)`,
 		`CREATE INDEX IF NOT EXISTS idx_queue_name ON messages(queue_name)`,
 		`CREATE INDEX IF NOT EXISTS idx_visibility_timeout ON messages(visibility_timeout)`,
 		`CREATE INDEX IF NOT EXISTS idx_receipt_handle ON messages(receipt_handle)`,
 		`CREATE INDEX IF NOT EXISTS idx_message_group_id ON messages(queue_name, message_group_id, created_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_deduplication_id ON messages(queue_name, message_deduplication_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_deduplication_hash ON messages(queue_name, deduplication_hash, created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_access_key_active ON access_keys(active)`,
 	}
 
 	for _, query := range queries {
@@ -693,4 +703,106 @@ func (s *SQLiteStorage) PurgeQueue(ctx context.Context, queueName string) error 
 
 func (s *SQLiteStorage) Close() error {
 	return s.db.Close()
+}
+
+// Access Key Operations
+func (s *SQLiteStorage) CreateAccessKey(ctx context.Context, accessKey *storage.AccessKey) error {
+	query := `INSERT INTO access_keys (
+		access_key_id, secret_access_key, name, description, active, created_at, last_used_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?)`
+
+	_, err := s.db.ExecContext(ctx, query,
+		accessKey.AccessKeyID, accessKey.SecretAccessKey, accessKey.Name,
+		accessKey.Description, accessKey.Active, accessKey.CreatedAt, accessKey.LastUsedAt)
+
+	if err != nil {
+		return fmt.Errorf("failed to create access key: %w", err)
+	}
+
+	return nil
+}
+
+func (s *SQLiteStorage) GetAccessKey(ctx context.Context, accessKeyID string) (*storage.AccessKey, error) {
+	query := `SELECT access_key_id, secret_access_key, name, description, active, created_at, last_used_at 
+		FROM access_keys WHERE access_key_id = ?`
+
+	row := s.db.QueryRowContext(ctx, query, accessKeyID)
+
+	var accessKey storage.AccessKey
+	var lastUsedAt sql.NullTime
+
+	err := row.Scan(
+		&accessKey.AccessKeyID, &accessKey.SecretAccessKey, &accessKey.Name,
+		&accessKey.Description, &accessKey.Active, &accessKey.CreatedAt, &lastUsedAt)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get access key: %w", err)
+	}
+
+	if lastUsedAt.Valid {
+		accessKey.LastUsedAt = &lastUsedAt.Time
+	}
+
+	return &accessKey, nil
+}
+
+func (s *SQLiteStorage) ListAccessKeys(ctx context.Context) ([]*storage.AccessKey, error) {
+	query := `SELECT access_key_id, secret_access_key, name, description, active, created_at, last_used_at 
+		FROM access_keys ORDER BY created_at DESC`
+
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list access keys: %w", err)
+	}
+	defer rows.Close()
+
+	var accessKeys []*storage.AccessKey
+	for rows.Next() {
+		var accessKey storage.AccessKey
+		var lastUsedAt sql.NullTime
+
+		err := rows.Scan(
+			&accessKey.AccessKeyID, &accessKey.SecretAccessKey, &accessKey.Name,
+			&accessKey.Description, &accessKey.Active, &accessKey.CreatedAt, &lastUsedAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan access key: %w", err)
+		}
+
+		if lastUsedAt.Valid {
+			accessKey.LastUsedAt = &lastUsedAt.Time
+		}
+
+		accessKeys = append(accessKeys, &accessKey)
+	}
+
+	return accessKeys, nil
+}
+
+func (s *SQLiteStorage) DeactivateAccessKey(ctx context.Context, accessKeyID string) error {
+	_, err := s.db.ExecContext(ctx,
+		"UPDATE access_keys SET active = FALSE WHERE access_key_id = ?", accessKeyID)
+	if err != nil {
+		return fmt.Errorf("failed to deactivate access key: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStorage) DeleteAccessKey(ctx context.Context, accessKeyID string) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM access_keys WHERE access_key_id = ?", accessKeyID)
+	if err != nil {
+		return fmt.Errorf("failed to delete access key: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStorage) UpdateAccessKeyUsage(ctx context.Context, accessKeyID string) error {
+	_, err := s.db.ExecContext(ctx,
+		"UPDATE access_keys SET last_used_at = CURRENT_TIMESTAMP WHERE access_key_id = ?", accessKeyID)
+	if err != nil {
+		return fmt.Errorf("failed to update access key usage: %w", err)
+	}
+	return nil
 }

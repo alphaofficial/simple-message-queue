@@ -109,12 +109,23 @@ func (s *PostgreSQLStorage) createTables() error {
 			FOREIGN KEY (queue_name) REFERENCES %s.queues(name) ON DELETE CASCADE
 		)`, pq.QuoteIdentifier(s.schema), pq.QuoteIdentifier(s.schema)),
 
+		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.access_keys (
+			access_key_id TEXT PRIMARY KEY,
+			secret_access_key TEXT NOT NULL,
+			name TEXT NOT NULL,
+			description TEXT,
+			active BOOLEAN DEFAULT TRUE,
+			created_at TIMESTAMPTZ DEFAULT NOW(),
+			last_used_at TIMESTAMPTZ
+		)`, pq.QuoteIdentifier(s.schema)),
+
 		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS idx_queue_name ON %s.messages(queue_name)`, pq.QuoteIdentifier(s.schema)),
 		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS idx_visibility_timeout ON %s.messages(visibility_timeout)`, pq.QuoteIdentifier(s.schema)),
 		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS idx_receipt_handle ON %s.messages(receipt_handle)`, pq.QuoteIdentifier(s.schema)),
 		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS idx_message_group_id ON %s.messages(queue_name, message_group_id, created_at)`, pq.QuoteIdentifier(s.schema)),
 		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS idx_deduplication_id ON %s.messages(queue_name, message_deduplication_id)`, pq.QuoteIdentifier(s.schema)),
 		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS idx_deduplication_hash ON %s.messages(queue_name, deduplication_hash, created_at)`, pq.QuoteIdentifier(s.schema)),
+		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS idx_access_key_active ON %s.access_keys(active)`, pq.QuoteIdentifier(s.schema)),
 	}
 
 	for _, query := range queries {
@@ -813,6 +824,109 @@ func (s *PostgreSQLStorage) GetInFlightMessages(ctx context.Context, queueName s
 func (s *PostgreSQLStorage) Close() error {
 	if s.db != nil {
 		return s.db.Close()
+	}
+	return nil
+}
+
+// Access Key Operations
+func (s *PostgreSQLStorage) CreateAccessKey(ctx context.Context, accessKey *storage.AccessKey) error {
+	query := fmt.Sprintf(`INSERT INTO %s.access_keys (
+		access_key_id, secret_access_key, name, description, active, created_at, last_used_at
+	) VALUES ($1, $2, $3, $4, $5, $6, $7)`, pq.QuoteIdentifier(s.schema))
+
+	_, err := s.db.ExecContext(ctx, query,
+		accessKey.AccessKeyID, accessKey.SecretAccessKey, accessKey.Name,
+		accessKey.Description, accessKey.Active, accessKey.CreatedAt, accessKey.LastUsedAt)
+
+	if err != nil {
+		return fmt.Errorf("failed to create access key: %w", err)
+	}
+
+	return nil
+}
+
+func (s *PostgreSQLStorage) GetAccessKey(ctx context.Context, accessKeyID string) (*storage.AccessKey, error) {
+	query := fmt.Sprintf(`SELECT access_key_id, secret_access_key, name, description, active, created_at, last_used_at 
+		FROM %s.access_keys WHERE access_key_id = $1`, pq.QuoteIdentifier(s.schema))
+
+	row := s.db.QueryRowContext(ctx, query, accessKeyID)
+
+	var accessKey storage.AccessKey
+	var lastUsedAt sql.NullTime
+
+	err := row.Scan(
+		&accessKey.AccessKeyID, &accessKey.SecretAccessKey, &accessKey.Name,
+		&accessKey.Description, &accessKey.Active, &accessKey.CreatedAt, &lastUsedAt)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get access key: %w", err)
+	}
+
+	if lastUsedAt.Valid {
+		accessKey.LastUsedAt = &lastUsedAt.Time
+	}
+
+	return &accessKey, nil
+}
+
+func (s *PostgreSQLStorage) ListAccessKeys(ctx context.Context) ([]*storage.AccessKey, error) {
+	query := fmt.Sprintf(`SELECT access_key_id, secret_access_key, name, description, active, created_at, last_used_at 
+		FROM %s.access_keys ORDER BY created_at DESC`, pq.QuoteIdentifier(s.schema))
+
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list access keys: %w", err)
+	}
+	defer rows.Close()
+
+	var accessKeys []*storage.AccessKey
+	for rows.Next() {
+		var accessKey storage.AccessKey
+		var lastUsedAt sql.NullTime
+
+		err := rows.Scan(
+			&accessKey.AccessKeyID, &accessKey.SecretAccessKey, &accessKey.Name,
+			&accessKey.Description, &accessKey.Active, &accessKey.CreatedAt, &lastUsedAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan access key: %w", err)
+		}
+
+		if lastUsedAt.Valid {
+			accessKey.LastUsedAt = &lastUsedAt.Time
+		}
+
+		accessKeys = append(accessKeys, &accessKey)
+	}
+
+	return accessKeys, nil
+}
+
+func (s *PostgreSQLStorage) DeactivateAccessKey(ctx context.Context, accessKeyID string) error {
+	query := fmt.Sprintf("UPDATE %s.access_keys SET active = FALSE WHERE access_key_id = $1", pq.QuoteIdentifier(s.schema))
+	_, err := s.db.ExecContext(ctx, query, accessKeyID)
+	if err != nil {
+		return fmt.Errorf("failed to deactivate access key: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgreSQLStorage) DeleteAccessKey(ctx context.Context, accessKeyID string) error {
+	query := fmt.Sprintf("DELETE FROM %s.access_keys WHERE access_key_id = $1", pq.QuoteIdentifier(s.schema))
+	_, err := s.db.ExecContext(ctx, query, accessKeyID)
+	if err != nil {
+		return fmt.Errorf("failed to delete access key: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgreSQLStorage) UpdateAccessKeyUsage(ctx context.Context, accessKeyID string) error {
+	query := fmt.Sprintf("UPDATE %s.access_keys SET last_used_at = NOW() WHERE access_key_id = $1", pq.QuoteIdentifier(s.schema))
+	_, err := s.db.ExecContext(ctx, query, accessKeyID)
+	if err != nil {
+		return fmt.Errorf("failed to update access key usage: %w", err)
 	}
 	return nil
 }

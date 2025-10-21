@@ -86,14 +86,16 @@ type SQSHandler struct {
 	baseURL       string
 	adminUsername string
 	adminPassword string
+	authRequired  bool
 }
 
-func NewSQSHandler(storage storage.Storage, baseURL, adminUsername, adminPassword string) *SQSHandler {
+func NewSQSHandler(storage storage.Storage, baseURL, adminUsername, adminPassword string, requireAuth bool) *SQSHandler {
 	return &SQSHandler{
 		storage:       storage,
 		baseURL:       baseURL,
 		adminUsername: adminUsername,
 		adminPassword: adminPassword,
+		authRequired:  requireAuth,
 	}
 }
 

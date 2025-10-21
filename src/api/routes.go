@@ -40,6 +40,12 @@ func (h *SQSHandler) SetupRoutes(router *gin.Engine) {
 		api.POST("/messages/send", func(c *gin.Context) { h.requireAuth(h.handleAPISendMessage)(c.Writer, c.Request) })
 		api.DELETE("/messages/delete", func(c *gin.Context) { h.requireAuth(h.handleAPIDeleteMessage)(c.Writer, c.Request) })
 		api.GET("/queues/:name/messages", func(c *gin.Context) { h.requireAuth(h.handleAPIGetQueueMessages)(c.Writer, c.Request) })
+
+		// Access key management endpoints
+		api.POST("/auth/access-keys", func(c *gin.Context) { h.requireAuth(h.handleCreateAccessKey)(c.Writer, c.Request) })
+		api.GET("/auth/access-keys", func(c *gin.Context) { h.requireAuth(h.handleListAccessKeys)(c.Writer, c.Request) })
+		api.POST("/auth/access-keys/deactivate", func(c *gin.Context) { h.requireAuth(h.handleDeactivateAccessKey)(c.Writer, c.Request) })
+		api.DELETE("/auth/access-keys/:id", func(c *gin.Context) { h.requireAuth(h.handleDeleteAccessKey)(c.Writer, c.Request) })
 	}
 
 	// SQS protocol endpoint (form-encoded and JSON)
