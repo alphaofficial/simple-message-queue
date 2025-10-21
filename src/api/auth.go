@@ -213,12 +213,6 @@ func hmacSHA256(key []byte, data string) []byte {
 // Middleware for authenticating SQS API requests
 func (h *SQSHandler) authenticateRequest(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Skip authentication if not required
-		if !h.authRequired {
-			next(w, r)
-			return
-		}
-
 		// Skip authentication for dashboard and login endpoints
 		if strings.HasPrefix(r.URL.Path, "/api/") && !strings.HasPrefix(r.URL.Path, "/api/auth/") {
 			// Dashboard API endpoints use session auth
