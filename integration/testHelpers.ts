@@ -22,8 +22,8 @@ export function createSQSClient(): SQSClient {
     endpoint: `http://${containers.sqsBridgeHost}:${containers.sqsBridgePort}`,
     region: "us-east-1",
     credentials: {
-      accessKeyId: "test",
-      secretAccessKey: "test"
+      accessKeyId: "test-access-key",
+      secretAccessKey: "test-secret-key"
     }
   });
 }

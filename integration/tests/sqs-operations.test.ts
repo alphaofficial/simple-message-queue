@@ -291,4 +291,70 @@ describe("SQS Core Operations", () => {
       expect(result.Attributes!.VisibilityTimeout).toBe(newVisibilityTimeout);
     });
   });
+
+  describe("Authentication", () => {
+    it("should fail with invalid access key", async () => {
+      const client = new SQSClient({
+        region: "us-east-1",
+        endpoint: "http://localhost:9324",
+        credentials: {
+          accessKeyId: "invalid-key",
+          secretAccessKey: "invalid-secret"
+        }
+      });
+
+      await expect(client.send(new ListQueuesCommand({}))).rejects.toThrow();
+    });
+
+    it("should succeed with valid access key", async () => {
+      const containers = (global as any).__CONTAINERS__;
+      const baseUrl = `http://${containers.sqsBridgeHost}:${containers.sqsBridgePort}`;
+
+      // First, login to get a session cookie
+      const loginResponse = await fetch(`${baseUrl}/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: 'username=test-access-key&password=test-secret-key'
+      });
+
+      // Extract session cookie
+      const setCookieHeader = loginResponse.headers.get('set-cookie');
+      expect(setCookieHeader).toContain('sqs_session=authenticated');
+
+      // Create an access key using the session cookie
+      const createKeyResponse = await fetch(`${baseUrl}/api/auth/access-keys`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cookie': 'sqs_session=authenticated'
+        },
+        body: JSON.stringify({
+          name: 'integration-test-key',
+          description: 'Key for integration testing'
+        })
+      });
+
+      expect(createKeyResponse.ok).toBe(true);
+      const keyData = await createKeyResponse.json() as {
+        accessKeyId: string;
+        secretAccessKey: string;
+      };
+      expect(keyData.accessKeyId).toBeDefined();
+      expect(keyData.secretAccessKey).toBeDefined();
+
+      // Now use the created access key for SQS operations
+      const client = new SQSClient({
+        endpoint: baseUrl,
+        credentials: {
+          accessKeyId: keyData.accessKeyId,
+          secretAccessKey: keyData.secretAccessKey
+        }
+      });
+
+      const result = await client.send(new ListQueuesCommand({}));
+      expect(result.QueueUrls).toBeDefined();
+    });
+  });
 });

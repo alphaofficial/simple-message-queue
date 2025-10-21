@@ -48,8 +48,12 @@ func (h *SQSHandler) SetupRoutes(router *gin.Engine) {
 		api.DELETE("/auth/access-keys/:id", func(c *gin.Context) { h.requireAuth(h.handleDeleteAccessKey)(c.Writer, c.Request) })
 	}
 
-	// SQS protocol endpoint (form-encoded and JSON)
-	router.POST("/", h.ginHandleSQSProtocol)
+	// SQS protocol endpoint (form-encoded and JSON) - with authentication
+	router.POST("/", func(c *gin.Context) {
+		h.authenticateRequest(func(w http.ResponseWriter, r *http.Request) {
+			h.ginHandleSQSProtocol(c)
+		})(c.Writer, c.Request)
+	})
 }
 
 // setupMiddleware configures Gin middleware

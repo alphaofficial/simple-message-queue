@@ -37,7 +37,9 @@ export default async () => {
       .withEnvironment({
         STORAGE_ADAPTER: "postgres",
         DATABASE_URL: pgConnectionUrl,
-        PORT: "8080"
+        PORT: "8080",
+        ADMIN_USERNAME: "test-access-key",
+        ADMIN_PASSWORD: "test-secret-key"
       })
       .withExposedPorts(8080)
       .withNetwork(network)
