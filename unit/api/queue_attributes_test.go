@@ -10,14 +10,14 @@ import (
 	"testing"
 	"time"
 
-	"sqs-bridge/src/api"
-	"sqs-bridge/src/storage"
+	"simple-message-queue/src/api"
+	"simple-message-queue/src/storage"
 )
 
 func TestGetQueueAttributes(t *testing.T) {
 	// Setup
 	mockStorage := NewMockStorage()
-	handler := api.NewSQSHandler(mockStorage, "http://localhost:9324", "test_admin", "test_password")
+	handler := api.NewSMQHandler(mockStorage, "http://localhost:9324", "test_admin", "test_password")
 
 	// Create test queue with custom attributes
 	queue := &storage.Queue{
@@ -193,7 +193,7 @@ func TestGetQueueAttributes(t *testing.T) {
 func TestGetQueueAttributesErrors(t *testing.T) {
 	// Setup
 	mockStorage := NewMockStorage()
-	handler := api.NewSQSHandler(mockStorage, "http://localhost:9324", "test_admin", "test_password")
+	handler := api.NewSMQHandler(mockStorage, "http://localhost:9324", "test_admin", "test_password")
 
 	t.Run("missing_queue_url", func(t *testing.T) {
 		formData := url.Values{}
@@ -243,7 +243,7 @@ func TestGetQueueAttributesErrors(t *testing.T) {
 func TestGetQueueAttributesMessageCounting(t *testing.T) {
 	// Setup
 	mockStorage := NewMockStorage()
-	handler := api.NewSQSHandler(mockStorage, "http://localhost:9324", "test_admin", "test_password")
+	handler := api.NewSMQHandler(mockStorage, "http://localhost:9324", "test_admin", "test_password")
 
 	// Create test queue
 	queue := &storage.Queue{

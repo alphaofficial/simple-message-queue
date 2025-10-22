@@ -23,7 +23,7 @@ func Load() *Config {
 	cfg := &Config{
 		Port:          getEnv("PORT", "8080"),
 		StorageType:   getEnv("STORAGE_ADAPTER", "sqlite"),
-		SQLiteDBPath:  getEnv("SQLITE_DB_PATH", "./sqs.db"),
+		SQLiteDBPath:  getEnv("SQLITE_DB_PATH", "./smq.db"),
 		PostgresURL:   getEnv("DATABASE_URL", ""),
 		PostgresHost:  getEnv("POSTGRES_HOST", "localhost"),
 		PostgresPort:  getEnv("POSTGRES_PORT", "5432"),

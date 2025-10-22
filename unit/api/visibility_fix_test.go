@@ -9,14 +9,14 @@ import (
 	"testing"
 	"time"
 
-	"sqs-bridge/src/api"
-	"sqs-bridge/src/storage"
+	"simple-message-queue/src/api"
+	"simple-message-queue/src/storage"
 )
 
 func TestVisibilityTimeoutSimple(t *testing.T) {
 	// Setup fresh mock storage
 	mockStorage := NewMockStorage()
-	handler := api.NewSQSHandler(mockStorage, "http://localhost:9324", "test_admin", "test_password")
+	handler := api.NewSMQHandler(mockStorage, "http://localhost:9324", "test_admin", "test_password")
 
 	// Create test queue
 	queue := &storage.Queue{
@@ -96,7 +96,7 @@ func TestVisibilityTimeoutSimple(t *testing.T) {
 
 func TestReceiveMessageDebug(t *testing.T) {
 	mockStorage := NewMockStorage()
-	handler := api.NewSQSHandler(mockStorage, "http://localhost:9324", "test_admin", "test_password")
+	handler := api.NewSMQHandler(mockStorage, "http://localhost:9324", "test_admin", "test_password")
 
 	// Create queue
 	queue := &storage.Queue{

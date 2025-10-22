@@ -5,7 +5,7 @@
 *.so
 *.dylib
 server
-sqs-server
+smq-server
 
 # Test binary, built with `go test -c`
 *.test
@@ -20,7 +20,7 @@ go.work
 *.db
 *.db-shm
 *.db-wal
-sqs.db*
+smq.db*
 
 # Log files
 *.log

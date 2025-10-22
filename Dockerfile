@@ -14,10 +14,10 @@ RUN go mod download
 COPY . .
 
 # Build the application (CGO needed for SQLite)
-RUN CGO_ENABLED=1 go build -o sqs-bridge main.go
+RUN CGO_ENABLED=1 go build -o simple-message-queue main.go
 
 # Document the port that may need to be published
 EXPOSE 8080
 
 # Start the application
-CMD ["/build/sqs-bridge"]
+CMD ["/build/simple-message-queue"]

@@ -11,7 +11,7 @@ export default async () => {
     // 1. Start PostgreSQL
     console.log("Starting PostgreSQL container...");
     const pgContainer = await new PostgreSqlContainer("postgres:17")
-      .withDatabase("sqsbridge_test")
+      .withDatabase("simplemessagequeue_test")
       .withUsername("test_user")
       .withPassword("test_password")
       .withNetwork(network)
@@ -20,20 +20,20 @@ export default async () => {
 
     console.log(`PostgreSQL started on port ${pgContainer.getMappedPort(5432)}`);
 
-    // 2. Build SQS Bridge from parent directory
-    console.log("Building SQS Bridge container...");
-    const sqsBridgeImage = await GenericContainer
+    // 2. Build Simple Message Queue from parent directory
+    console.log("Building Simple Message Queue container...");
+    const smq = await GenericContainer
       .fromDockerfile("../", "Dockerfile") // Build from parent Go project
       .build();
 
-    // 3. Start SQS Bridge with PostgreSQL connection
-    console.log("Starting SQS Bridge container...");
+    // 3. Start Simple Message Queue with PostgreSQL connection
+    console.log("Starting Simple Message Queue container...");
 
     // Use internal network connection
-    const pgConnectionUrl = `postgres://test_user:test_password@postgres:5432/sqsbridge_test?sslmode=disable`;
+    const pgConnectionUrl = `postgres://test_user:test_password@postgres:5432/simplemessagequeue_test?sslmode=disable`;
     console.log("Database URL:", pgConnectionUrl);
 
-    const sqsBridge = await sqsBridgeImage
+    const smqInstance = await smq
       .withEnvironment({
         STORAGE_ADAPTER: "postgres",
         DATABASE_URL: pgConnectionUrl,
@@ -49,15 +49,15 @@ export default async () => {
     // Wait a moment for the service to fully start
     await new Promise(resolve => setTimeout(resolve, 3000));
 
-    const sqsBridgePort = sqsBridge.getMappedPort(8080);
-    console.log(`SQS Bridge started on port ${sqsBridgePort}`);
+    const smqPort = smqInstance.getMappedPort(8080);
+    console.log(`Simple Message Queue started on port ${smqPort}`);
 
     // Store for global access
     (global as any).__CONTAINERS__ = {
       postgres: pgContainer,
-      sqsBridge: sqsBridge,
-      sqsBridgePort: sqsBridgePort,
-      sqsBridgeHost: sqsBridge.getHost(),
+      smq: smqInstance,
+      smqPort: smqPort,
+      smqHost: smqInstance.getHost(),
       network: network
     };
 

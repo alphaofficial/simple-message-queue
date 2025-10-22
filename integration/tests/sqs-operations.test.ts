@@ -308,7 +308,7 @@ describe("SQS Core Operations", () => {
 
     it("should succeed with valid access key", async () => {
       const containers = (global as any).__CONTAINERS__;
-      const baseUrl = `http://${containers.sqsBridgeHost}:${containers.sqsBridgePort}`;
+      const baseUrl = `http://${containers.smqHost}:${containers.smqPort}`;
 
       // First, login to get a session cookie
       const loginResponse = await fetch(`${baseUrl}/login`, {

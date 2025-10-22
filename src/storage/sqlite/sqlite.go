@@ -14,7 +14,7 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 
-	storage "sqs-bridge/src/storage"
+	storage "simple-message-queue/src/storage"
 )
 
 type SQLiteStorage struct {

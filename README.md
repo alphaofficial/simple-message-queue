@@ -1,13 +1,13 @@
-# SQS Bridge
+# Simple Message Queue
 
-A lightweight, SQS-compatible message queue server that supports storage backends including SQLite and PostgreSQL.
+A lightweight, sqs-compatible message queue server that supports storage backends including SQLite and PostgreSQL.
 
 ### Installation
 
 1. Clone the repository:
 ```bash
 git clone <repository-url>
-cd sqs-bridge
+cd simple-message-queue
 ```
 
 2. Install dependencies:
@@ -68,7 +68,7 @@ Environment variables:
 ```typescript
 import { SQSClient, SendMessageCommand, ReceiveMessageCommand, DeleteMessageCommand } from "@aws-sdk/client-sqs";
 
-// Configure client for local SQS bridge
+// Configure client for local Simple Message Queue
 const sqsClient = new SQSClient({
   region: "us-east-1", // random
   endpoint: "http://localhost:8080",

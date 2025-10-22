@@ -2,9 +2,9 @@ import { SQSClient } from "@aws-sdk/client-sqs";
 
 interface TestContainers {
   postgres: any;
-  sqsBridge: any;
-  sqsBridgePort: number;
-  sqsBridgeHost: string;
+  smq: any;
+  smqPort: number;
+  smqHost: string;
 }
 
 declare global {
@@ -14,12 +14,12 @@ declare global {
 export function createSQSClient(): SQSClient {
   const containers = global.__CONTAINERS__;
   
-  if (!containers || !containers.sqsBridgePort) {
+  if (!containers || !containers.smqPort) {
     throw new Error("Test containers not initialized. Make sure jestGlobalSetup ran successfully.");
   }
 
   return new SQSClient({
-    endpoint: `http://${containers.sqsBridgeHost}:${containers.sqsBridgePort}`,
+    endpoint: `http://${containers.smqHost}:${containers.smqPort}`,
     region: "us-east-1",
     credentials: {
       accessKeyId: "test-access-key",
@@ -30,7 +30,7 @@ export function createSQSClient(): SQSClient {
 
 export function getQueueUrl(queueName: string): string {
   const containers = global.__CONTAINERS__;
-  return `http://${containers.sqsBridgeHost}:${containers.sqsBridgePort}/${queueName}`;
+  return `http://${containers.smqHost}:${containers.smqPort}/${queueName}`;
 }
 
 export function generateTestQueueName(testName: string): string {

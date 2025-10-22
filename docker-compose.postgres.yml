@@ -1,36 +1,36 @@
 services:
   postgres:
     image: postgres:17
-    container_name: sqs-postgres
+    container_name: smq-postgres
     restart: unless-stopped
     environment:
-      - POSTGRES_USER=sqsuser
-      - POSTGRES_PASSWORD=sqspassword
-      - POSTGRES_DB=sqsbridge
+      - POSTGRES_USER=smquser
+      - POSTGRES_PASSWORD=smqpassword
+      - POSTGRES_DB=simplemessagequeue
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U sqsuser -d sqsbridge"]
+      test: ["CMD-SHELL", "pg_isready -U smquser -d simplemessagequeue"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - sqs-network
+      - smq-network
 
-  sqs-bridge:
+  simple-message-queue:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: sqs-bridge
+    container_name: simple-message-queue
     restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
       - PORT=8080
       - STORAGE_ADAPTER=postgres
-      - DATABASE_URL=postgres://sqsuser:sqspassword@postgres:5432/sqsbridge?sslmode=disable
+      - DATABASE_URL=postgres://smquser:smqpassword@postgres:5432/simplemessagequeue?sslmode=disable
       - BASE_URL=http://localhost:8080
       - GIN_MODE=release
     healthcheck:
@@ -51,12 +51,12 @@ services:
       postgres:
         condition: service_healthy
     networks:
-      - sqs-network
+      - smq-network
 
 volumes:
   postgres_data:
     driver: local
 
 networks:
-  sqs-network:
+  smq-network:
     driver: bridge

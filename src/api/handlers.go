@@ -18,7 +18,7 @@ import (
 
 	"github.com/google/uuid"
 
-	storage "sqs-bridge/src/storage"
+	storage "simple-message-queue/src/storage"
 )
 
 // calculateMD5OfMessageAttributes calculates the MD5 hash of message attributes
@@ -81,15 +81,15 @@ func calculateMD5OfMessageAttributes(attrs map[string]storage.MessageAttribute) 
 	return hex.EncodeToString(hash[:])
 }
 
-type SQSHandler struct {
+type SMQHandler struct {
 	storage       storage.Storage
 	baseURL       string
 	adminUsername string
 	adminPassword string
 }
 
-func NewSQSHandler(storage storage.Storage, baseURL, adminUsername, adminPassword string) *SQSHandler {
-	return &SQSHandler{
+func NewSMQHandler(storage storage.Storage, baseURL, adminUsername, adminPassword string) *SMQHandler {
+	return &SMQHandler{
 		storage:       storage,
 		baseURL:       baseURL,
 		adminUsername: adminUsername,
@@ -97,7 +97,7 @@ func NewSQSHandler(storage storage.Storage, baseURL, adminUsername, adminPasswor
 	}
 }
 
-func (h *SQSHandler) handleCreateQueue(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleCreateQueue(w http.ResponseWriter, r *http.Request) {
 	queueName := r.FormValue("QueueName")
 	if queueName == "" {
 		h.writeErrorResponse(w, "MissingParameter", "QueueName is required", http.StatusBadRequest)
@@ -189,7 +189,7 @@ func (h *SQSHandler) handleCreateQueue(w http.ResponseWriter, r *http.Request) {
 	h.writeXMLResponse(w, response, http.StatusOK)
 }
 
-func (h *SQSHandler) handleDeleteQueue(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleDeleteQueue(w http.ResponseWriter, r *http.Request) {
 	queueURL := r.FormValue("QueueUrl")
 	queueName := h.extractQueueNameFromURL(queueURL)
 
@@ -207,7 +207,7 @@ func (h *SQSHandler) handleDeleteQueue(w http.ResponseWriter, r *http.Request) {
 	xml.NewEncoder(w).Encode(response)
 }
 
-func (h *SQSHandler) handleListQueues(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleListQueues(w http.ResponseWriter, r *http.Request) {
 	prefix := r.FormValue("QueueNamePrefix")
 
 	queues, err := h.storage.ListQueues(r.Context(), prefix)
@@ -231,7 +231,7 @@ func (h *SQSHandler) handleListQueues(w http.ResponseWriter, r *http.Request) {
 	h.writeXMLResponse(w, response, http.StatusOK)
 }
 
-func (h *SQSHandler) handleGetQueueUrl(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleGetQueueUrl(w http.ResponseWriter, r *http.Request) {
 	queueName := r.FormValue("QueueName")
 
 	queue, err := h.storage.GetQueue(r.Context(), queueName)
@@ -250,7 +250,7 @@ func (h *SQSHandler) handleGetQueueUrl(w http.ResponseWriter, r *http.Request) {
 	h.writeXMLResponse(w, response, http.StatusOK)
 }
 
-func (h *SQSHandler) handleSendMessage(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	queueURL := r.FormValue("QueueUrl")
 	queueName := h.extractQueueNameFromURL(queueURL)
 	messageBody := r.FormValue("MessageBody")
@@ -379,7 +379,7 @@ func (h *SQSHandler) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	h.writeXMLResponse(w, response, http.StatusOK)
 }
 
-func (h *SQSHandler) handleReceiveMessage(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleReceiveMessage(w http.ResponseWriter, r *http.Request) {
 	queueURL := r.FormValue("QueueUrl")
 	queueName := h.extractQueueNameFromURL(queueURL)
 
@@ -438,7 +438,7 @@ func (h *SQSHandler) handleReceiveMessage(w http.ResponseWriter, r *http.Request
 	h.writeXMLResponse(w, response, http.StatusOK)
 }
 
-func (h *SQSHandler) handleDeleteMessage(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleDeleteMessage(w http.ResponseWriter, r *http.Request) {
 	queueURL := r.FormValue("QueueUrl")
 	queueName := h.extractQueueNameFromURL(queueURL)
 	receiptHandle := r.FormValue("ReceiptHandle")
@@ -462,7 +462,7 @@ func (h *SQSHandler) handleDeleteMessage(w http.ResponseWriter, r *http.Request)
 	h.writeXMLResponse(w, response, http.StatusOK)
 }
 
-func (h *SQSHandler) handleChangeMessageVisibility(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleChangeMessageVisibility(w http.ResponseWriter, r *http.Request) {
 	queueURL := r.FormValue("QueueUrl")
 	queueName := h.extractQueueNameFromURL(queueURL)
 	receiptHandle := r.FormValue("ReceiptHandle")
@@ -488,7 +488,7 @@ func (h *SQSHandler) handleChangeMessageVisibility(w http.ResponseWriter, r *htt
 	xml.NewEncoder(w).Encode(response)
 }
 
-func (h *SQSHandler) handleGetQueueAttributes(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleGetQueueAttributes(w http.ResponseWriter, r *http.Request) {
 	queueURL := r.FormValue("QueueUrl")
 	queueName := h.extractQueueNameFromURL(queueURL)
 
@@ -539,7 +539,7 @@ func (h *SQSHandler) handleGetQueueAttributes(w http.ResponseWriter, r *http.Req
 	h.writeXMLResponse(w, response, http.StatusOK)
 }
 
-func (h *SQSHandler) generateQueueAttributes(ctx context.Context, queue *storage.Queue, requestedAttrs []string) ([]QueueAttribute, error) {
+func (h *SMQHandler) generateQueueAttributes(ctx context.Context, queue *storage.Queue, requestedAttrs []string) ([]QueueAttribute, error) {
 	var attributes []QueueAttribute
 
 	// Check if "All" is requested
@@ -714,7 +714,7 @@ func (h *SQSHandler) generateQueueAttributes(ctx context.Context, queue *storage
 	return attributes, nil
 }
 
-func (h *SQSHandler) handleSetQueueAttributes(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleSetQueueAttributes(w http.ResponseWriter, r *http.Request) {
 	queueURL := r.FormValue("QueueUrl")
 	queueName := h.extractQueueNameFromURL(queueURL)
 
@@ -772,7 +772,7 @@ func (h *SQSHandler) handleSetQueueAttributes(w http.ResponseWriter, r *http.Req
 	xml.NewEncoder(w).Encode(response)
 }
 
-func (h *SQSHandler) handlePurgeQueue(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handlePurgeQueue(w http.ResponseWriter, r *http.Request) {
 	queueURL := r.FormValue("QueueUrl")
 	queueName := h.extractQueueNameFromURL(queueURL)
 
@@ -790,7 +790,7 @@ func (h *SQSHandler) handlePurgeQueue(w http.ResponseWriter, r *http.Request) {
 	xml.NewEncoder(w).Encode(response)
 }
 
-func (h *SQSHandler) handleSendMessageBatch(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleSendMessageBatch(w http.ResponseWriter, r *http.Request) {
 	queueURL := r.FormValue("QueueUrl")
 	queueName := h.extractQueueNameFromURL(queueURL)
 
@@ -875,7 +875,7 @@ func (h *SQSHandler) handleSendMessageBatch(w http.ResponseWriter, r *http.Reque
 	h.writeXMLResponse(w, response, http.StatusOK)
 }
 
-func (h *SQSHandler) handleDeleteMessageBatch(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleDeleteMessageBatch(w http.ResponseWriter, r *http.Request) {
 	queueURL := r.FormValue("QueueUrl")
 	queueName := h.extractQueueNameFromURL(queueURL)
 
@@ -930,7 +930,7 @@ func (h *SQSHandler) handleDeleteMessageBatch(w http.ResponseWriter, r *http.Req
 	h.writeXMLResponse(w, response, http.StatusOK)
 }
 
-func (h *SQSHandler) handleChangeMessageVisibilityBatch(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleChangeMessageVisibilityBatch(w http.ResponseWriter, r *http.Request) {
 	queueURL := r.FormValue("QueueUrl")
 	queueName := h.extractQueueNameFromURL(queueURL)
 
@@ -998,7 +998,7 @@ func (h *SQSHandler) handleChangeMessageVisibilityBatch(w http.ResponseWriter, r
 	h.writeXMLResponse(w, response, http.StatusOK)
 }
 
-func (h *SQSHandler) extractQueueNameFromURL(queueURL string) string {
+func (h *SMQHandler) extractQueueNameFromURL(queueURL string) string {
 	if queueURL == "" {
 		return ""
 	}
@@ -1016,7 +1016,7 @@ func (h *SQSHandler) extractQueueNameFromURL(queueURL string) string {
 	return ""
 }
 
-func (h *SQSHandler) writeErrorResponse(w http.ResponseWriter, code, message string, statusCode int) {
+func (h *SMQHandler) writeErrorResponse(w http.ResponseWriter, code, message string, statusCode int) {
 	errorResp := ErrorResponse{
 		Error: Error{
 			Type:    "Sender",
@@ -1031,7 +1031,7 @@ func (h *SQSHandler) writeErrorResponse(w http.ResponseWriter, code, message str
 	xml.NewEncoder(w).Encode(errorResp)
 }
 
-func (h *SQSHandler) writeXMLResponse(w http.ResponseWriter, response interface{}, statusCode int) {
+func (h *SMQHandler) writeXMLResponse(w http.ResponseWriter, response interface{}, statusCode int) {
 	w.Header().Set("Content-Type", "application/xml")
 	w.WriteHeader(statusCode)
 
@@ -1040,7 +1040,7 @@ func (h *SQSHandler) writeXMLResponse(w http.ResponseWriter, response interface{
 }
 
 // JSON Protocol Response Functions
-func (h *SQSHandler) writeJSONErrorResponse(w http.ResponseWriter, code, message string, statusCode int) {
+func (h *SMQHandler) writeJSONErrorResponse(w http.ResponseWriter, code, message string, statusCode int) {
 	errorResp := JSONErrorResponse{
 		Type:    fmt.Sprintf("com.amazon.sqs.api#%s", code),
 		Code:    code,
@@ -1052,14 +1052,14 @@ func (h *SQSHandler) writeJSONErrorResponse(w http.ResponseWriter, code, message
 	json.NewEncoder(w).Encode(errorResp)
 }
 
-func (h *SQSHandler) writeJSONResponse(w http.ResponseWriter, response interface{}) {
+func (h *SMQHandler) writeJSONResponse(w http.ResponseWriter, response interface{}) {
 	w.Header().Set("Content-Type", "application/x-amz-json-1.0")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
 }
 
 // JSON SendMessage Handler
-func (h *SQSHandler) handleJSONSendMessage(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleJSONSendMessage(w http.ResponseWriter, r *http.Request) {
 	var req JSONSendMessageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.writeJSONErrorResponse(w, "InvalidRequest", "Failed to parse JSON request", http.StatusBadRequest)
@@ -1191,7 +1191,7 @@ func (h *SQSHandler) handleJSONSendMessage(w http.ResponseWriter, r *http.Reques
 }
 
 // JSON ReceiveMessage Handler
-func (h *SQSHandler) handleJSONReceiveMessage(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleJSONReceiveMessage(w http.ResponseWriter, r *http.Request) {
 	var req JSONReceiveMessageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.writeJSONErrorResponse(w, "InvalidRequest", "Failed to parse JSON request", http.StatusBadRequest)
@@ -1274,7 +1274,7 @@ func (h *SQSHandler) handleJSONReceiveMessage(w http.ResponseWriter, r *http.Req
 }
 
 // JSON DeleteMessage Handler
-func (h *SQSHandler) handleJSONDeleteMessage(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleJSONDeleteMessage(w http.ResponseWriter, r *http.Request) {
 	var req JSONDeleteMessageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.writeJSONErrorResponse(w, "InvalidRequest", "Failed to parse JSON request", http.StatusBadRequest)
@@ -1305,7 +1305,7 @@ func (h *SQSHandler) handleJSONDeleteMessage(w http.ResponseWriter, r *http.Requ
 }
 
 // JSON DeleteMessageBatch Handler
-func (h *SQSHandler) handleJSONDeleteMessageBatch(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleJSONDeleteMessageBatch(w http.ResponseWriter, r *http.Request) {
 	var req JSONDeleteMessageBatchRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.writeJSONErrorResponse(w, "InvalidRequest", "Failed to parse JSON request", http.StatusBadRequest)
@@ -1364,7 +1364,7 @@ func (h *SQSHandler) handleJSONDeleteMessageBatch(w http.ResponseWriter, r *http
 }
 
 // JSON SendMessageBatch Handler
-func (h *SQSHandler) handleJSONSendMessageBatch(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleJSONSendMessageBatch(w http.ResponseWriter, r *http.Request) {
 	var req JSONSendMessageBatchRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.writeJSONErrorResponse(w, "InvalidRequest", "Failed to parse JSON request", http.StatusBadRequest)
@@ -1531,7 +1531,7 @@ func convertMessageAttributesToSlice(attrs map[string]storage.MessageAttribute) 
 }
 
 // Authentication handlers
-func (h *SQSHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		// Check if admin credentials are configured
 		if h.adminUsername == "" || h.adminPassword == "" {
@@ -1541,7 +1541,7 @@ func (h *SQSHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 <!DOCTYPE html>
 <html>
 <head>
-    <title>SQS Bridge - Setup Required</title>
+    <title>Simple Message Queue - Setup Required</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
         .container { max-width: 500px; margin: 0 auto; background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
@@ -1553,12 +1553,12 @@ func (h *SQSHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
     <div class="container">
         <h1>Setup Required</h1>
         <p class="error">Admin credentials are not configured.</p>
-        <p>To access the SQS Bridge dashboard, please set the following environment variables:</p>
+        <p>To access the Simple Message Queue dashboard, please set the following environment variables:</p>
         <div class="code">
 ADMIN_USERNAME=your_admin_username<br>
 ADMIN_PASSWORD=your_secure_password
         </div>
-        <p>Then restart the SQS Bridge service.</p>
+        <p>Then restart the Simple Message Queue service.</p>
     </div>
 </body>
 </html>`))
@@ -1611,7 +1611,7 @@ ADMIN_PASSWORD=your_secure_password
 	w.WriteHeader(http.StatusMethodNotAllowed)
 }
 
-func (h *SQSHandler) handleLogout(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleLogout(w http.ResponseWriter, r *http.Request) {
 	// Clear session cookie
 	http.SetCookie(w, &http.Cookie{
 		Name:     "sqs_session",
@@ -1623,7 +1623,7 @@ func (h *SQSHandler) handleLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
-func (h *SQSHandler) isAuthenticated(r *http.Request) bool {
+func (h *SMQHandler) isAuthenticated(r *http.Request) bool {
 	// If no admin credentials are configured, deny access
 	if h.adminUsername == "" || h.adminPassword == "" {
 		return false
@@ -1636,7 +1636,7 @@ func (h *SQSHandler) isAuthenticated(r *http.Request) bool {
 	return cookie.Value == "authenticated"
 }
 
-func (h *SQSHandler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
+func (h *SMQHandler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !h.isAuthenticated(r) {
 			// Include current URL as redirect parameter
@@ -1648,7 +1648,7 @@ func (h *SQSHandler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func (h *SQSHandler) handleDashboard(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
 	w.WriteHeader(http.StatusOK)
 
@@ -1663,7 +1663,7 @@ func (h *SQSHandler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	w.Write(html)
 }
 
-func (h *SQSHandler) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 	// Get all queues
 	queues, err := h.storage.ListQueues(r.Context(), "")
 	if err != nil {
@@ -1761,7 +1761,7 @@ func (h *SQSHandler) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 
 // handleAPIRoutes handles REST API endpoints for dashboard operations
 // API handlers for dashboard operations
-func (h *SQSHandler) handleAPIListQueues(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleAPIListQueues(w http.ResponseWriter, r *http.Request) {
 	queues, err := h.storage.ListQueues(r.Context(), "")
 	if err != nil {
 		http.Error(w, `{"error": "Failed to list queues"}`, http.StatusInternalServerError)
@@ -1784,7 +1784,7 @@ func (h *SQSHandler) handleAPIListQueues(w http.ResponseWriter, r *http.Request)
 	w.Write([]byte(response))
 }
 
-func (h *SQSHandler) handleAPICreateQueue(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleAPICreateQueue(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		QueueName string `json:"queueName"`
 	}
@@ -1812,7 +1812,7 @@ func (h *SQSHandler) handleAPICreateQueue(w http.ResponseWriter, r *http.Request
 	w.Write([]byte(response))
 }
 
-func (h *SQSHandler) handleAPIPollMessages(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleAPIPollMessages(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		QueueName   string `json:"queueName"`
 		MaxMessages int    `json:"maxMessages"`
@@ -1856,7 +1856,7 @@ func (h *SQSHandler) handleAPIPollMessages(w http.ResponseWriter, r *http.Reques
 	w.Write([]byte(response))
 }
 
-func (h *SQSHandler) handleAPISendMessage(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleAPISendMessage(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		QueueName string `json:"queueName"`
 		Body      string `json:"messageBody"`
@@ -1892,7 +1892,7 @@ func (h *SQSHandler) handleAPISendMessage(w http.ResponseWriter, r *http.Request
 	w.Write([]byte(response))
 }
 
-func (h *SQSHandler) handleAPIDeleteMessage(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleAPIDeleteMessage(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		QueueName     string `json:"queueName"`
 		ReceiptHandle string `json:"receiptHandle"`
@@ -1911,7 +1911,7 @@ func (h *SQSHandler) handleAPIDeleteMessage(w http.ResponseWriter, r *http.Reque
 	w.Write([]byte(`{"success": true}`))
 }
 
-func (h *SQSHandler) handleAPIDeleteQueue(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleAPIDeleteQueue(w http.ResponseWriter, r *http.Request) {
 	// Extract queue name from path like /api/queues/my-queue
 	pathParts := strings.Split(r.URL.Path, "/")
 	if len(pathParts) != 4 {
@@ -1928,7 +1928,7 @@ func (h *SQSHandler) handleAPIDeleteQueue(w http.ResponseWriter, r *http.Request
 	w.Write([]byte(`{"success": true}`))
 }
 
-func (h *SQSHandler) handleAPIGetQueueMessages(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleAPIGetQueueMessages(w http.ResponseWriter, r *http.Request) {
 	// Extract queue name from path like /api/queues/my-queue/messages
 	pathParts := strings.Split(r.URL.Path, "/")
 	if len(pathParts) != 5 {
@@ -1962,7 +1962,7 @@ func (h *SQSHandler) handleAPIGetQueueMessages(w http.ResponseWriter, r *http.Re
 }
 
 // handleHealthCheck returns basic health status for Docker health checks
-func (h *SQSHandler) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 	// Check database connectivity
 	ctx := r.Context()
 	_, err := h.storage.ListQueues(ctx, "")
@@ -1975,11 +1975,11 @@ func (h *SQSHandler) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status": "healthy", "service": "sqs-bridge"}`))
+	w.Write([]byte(`{"status": "healthy", "service": "simple-message-queue"}`))
 }
 
 // JSON CreateQueue Handler
-func (h *SQSHandler) handleJSONCreateQueue(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleJSONCreateQueue(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		QueueName  string            `json:"QueueName"`
 		Attributes map[string]string `json:"Attributes,omitempty"`
@@ -2045,7 +2045,7 @@ func (h *SQSHandler) handleJSONCreateQueue(w http.ResponseWriter, r *http.Reques
 }
 
 // JSON DeleteQueue Handler
-func (h *SQSHandler) handleJSONDeleteQueue(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleJSONDeleteQueue(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		QueueUrl string `json:"QueueUrl"`
 	}
@@ -2064,7 +2064,7 @@ func (h *SQSHandler) handleJSONDeleteQueue(w http.ResponseWriter, r *http.Reques
 }
 
 // JSON ListQueues Handler
-func (h *SQSHandler) handleJSONListQueues(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleJSONListQueues(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		QueueNamePrefix string `json:"QueueNamePrefix,omitempty"`
 	}
@@ -2088,7 +2088,7 @@ func (h *SQSHandler) handleJSONListQueues(w http.ResponseWriter, r *http.Request
 }
 
 // JSON GetQueueUrl Handler
-func (h *SQSHandler) handleJSONGetQueueUrl(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleJSONGetQueueUrl(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		QueueName string `json:"QueueName"`
 	}
@@ -2110,7 +2110,7 @@ func (h *SQSHandler) handleJSONGetQueueUrl(w http.ResponseWriter, r *http.Reques
 }
 
 // JSON ChangeMessageVisibility Handler
-func (h *SQSHandler) handleJSONChangeMessageVisibility(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleJSONChangeMessageVisibility(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		QueueUrl          string `json:"QueueUrl"`
 		ReceiptHandle     string `json:"ReceiptHandle"`
@@ -2131,7 +2131,7 @@ func (h *SQSHandler) handleJSONChangeMessageVisibility(w http.ResponseWriter, r 
 }
 
 // JSON ChangeMessageVisibilityBatch Handler
-func (h *SQSHandler) handleJSONChangeMessageVisibilityBatch(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleJSONChangeMessageVisibilityBatch(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		QueueUrl string `json:"QueueUrl"`
 		Entries  []struct {
@@ -2170,7 +2170,7 @@ func (h *SQSHandler) handleJSONChangeMessageVisibilityBatch(w http.ResponseWrite
 }
 
 // JSON GetQueueAttributes Handler
-func (h *SQSHandler) handleJSONGetQueueAttributes(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleJSONGetQueueAttributes(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		QueueUrl       string   `json:"QueueUrl"`
 		AttributeNames []string `json:"AttributeNames,omitempty"`
@@ -2212,7 +2212,7 @@ func (h *SQSHandler) handleJSONGetQueueAttributes(w http.ResponseWriter, r *http
 }
 
 // JSON SetQueueAttributes Handler
-func (h *SQSHandler) handleJSONSetQueueAttributes(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleJSONSetQueueAttributes(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		QueueUrl   string            `json:"QueueUrl"`
 		Attributes map[string]string `json:"Attributes"`
@@ -2241,7 +2241,7 @@ func (h *SQSHandler) handleJSONSetQueueAttributes(w http.ResponseWriter, r *http
 }
 
 // JSON PurgeQueue Handler
-func (h *SQSHandler) handleJSONPurgeQueue(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleJSONPurgeQueue(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		QueueUrl string `json:"QueueUrl"`
 	}

@@ -1,5 +1,5 @@
 module.exports = {
-  displayName: "SQS Bridge Integration Tests",
+  displayName: "Simple Message Queue Integration Tests",
   testEnvironment: "node",
   preset: "ts-jest",
   roots: ["<rootDir>/tests"],

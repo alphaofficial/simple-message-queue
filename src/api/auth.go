@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"sqs-bridge/src/storage"
+	"simple-message-queue/src/storage"
 )
 
 // AWS-style access key format: AKIA + 16 chars
@@ -210,8 +210,8 @@ func hmacSHA256(key []byte, data string) []byte {
 	return h.Sum(nil)
 }
 
-// Middleware for authenticating SQS API requests
-func (h *SQSHandler) authenticateRequest(next http.HandlerFunc) http.HandlerFunc {
+// Middleware for authenticating API requests
+func (h *SMQHandler) authenticateRequest(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Skip authentication for dashboard and login endpoints
 		if strings.HasPrefix(r.URL.Path, "/api/") && !strings.HasPrefix(r.URL.Path, "/api/auth/") {
@@ -258,7 +258,7 @@ func (h *SQSHandler) authenticateRequest(next http.HandlerFunc) http.HandlerFunc
 }
 
 // Access key management endpoints
-func (h *SQSHandler) handleCreateAccessKey(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleCreateAccessKey(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -305,7 +305,7 @@ func (h *SQSHandler) handleCreateAccessKey(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-func (h *SQSHandler) handleListAccessKeys(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleListAccessKeys(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -339,7 +339,7 @@ func (h *SQSHandler) handleListAccessKeys(w http.ResponseWriter, r *http.Request
 	})
 }
 
-func (h *SQSHandler) handleDeactivateAccessKey(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleDeactivateAccessKey(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -370,7 +370,7 @@ func (h *SQSHandler) handleDeactivateAccessKey(w http.ResponseWriter, r *http.Re
 	})
 }
 
-func (h *SQSHandler) handleDeleteAccessKey(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleDeleteAccessKey(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
