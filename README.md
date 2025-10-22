@@ -1,6 +1,6 @@
 # Simple Message Queue
 
-A lightweight, sqs-compatible message queue server that supports storage backends including SQLite and PostgreSQL.
+sqs sdk compatible queue server with storage adapters for sqlite, postgres databases
 
 ### Installation
 
@@ -122,7 +122,3 @@ The dashboard provides:
 - Queue management and monitoring
 - Message browsing and inspection
 
-
-## License
-
-MIT
