@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"sqs-bridge/src/storage"
+	"simple-message-queue/src/storage"
 )
 
 func TestSendMessageBatch(t *testing.T) {

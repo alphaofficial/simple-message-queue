@@ -11,14 +11,14 @@ import (
 	"testing"
 	"time"
 
-	"sqs-bridge/src/api"
-	"sqs-bridge/src/storage"
+	"simple-message-queue/src/api"
+	"simple-message-queue/src/storage"
 )
 
 func TestSendMessageBatch(t *testing.T) {
 	// Setup
 	mockStorage := NewMockStorage()
-	handler := api.NewSQSHandler(mockStorage, "http://localhost:9324", "", "")
+	handler := api.NewSMQHandler(mockStorage, "http://localhost:9324", "", "")
 
 	// Create test queue
 	queue := &storage.Queue{
@@ -150,7 +150,7 @@ func TestSendMessageBatch(t *testing.T) {
 func TestDeleteMessageBatch(t *testing.T) {
 	// Setup
 	mockStorage := NewMockStorage()
-	handler := api.NewSQSHandler(mockStorage, "http://localhost:9324", "", "")
+	handler := api.NewSMQHandler(mockStorage, "http://localhost:9324", "", "")
 
 	// Create test queue
 	queue := &storage.Queue{
@@ -242,7 +242,7 @@ func TestDeleteMessageBatch(t *testing.T) {
 func TestChangeMessageVisibilityBatch(t *testing.T) {
 	// Setup
 	mockStorage := NewMockStorage()
-	handler := api.NewSQSHandler(mockStorage, "http://localhost:9324", "", "")
+	handler := api.NewSMQHandler(mockStorage, "http://localhost:9324", "", "")
 
 	// Create test queue
 	queue := &storage.Queue{
@@ -318,7 +318,7 @@ func TestChangeMessageVisibilityBatch(t *testing.T) {
 func TestBatchOperationErrors(t *testing.T) {
 	// Setup
 	mockStorage := NewMockStorage()
-	handler := api.NewSQSHandler(mockStorage, "http://localhost:9324", "", "")
+	handler := api.NewSMQHandler(mockStorage, "http://localhost:9324", "", "")
 
 	// Create test queue
 	queue := &storage.Queue{

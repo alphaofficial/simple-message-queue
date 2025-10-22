@@ -1,7 +1,7 @@
 {
-  "name": "sqs-bridge-integration-tests",
+  "name": "simple-message-queue-integration-tests",
   "version": "1.0.0",
-  "description": "Integration tests for SQS Bridge using AWS SDK v3 and testcontainers",
+  "description": "Integration tests for Simple Message Queue using AWS SDK v3 and testcontainers",
   "private": true,
   "scripts": {
     "test": "jest",

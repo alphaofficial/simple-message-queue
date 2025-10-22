@@ -6,8 +6,8 @@ export default async (): Promise<void> => {
 
   if (containers) {
     try {
-      if (containers.sqsBridge) {
-        await containers.sqsBridge.stop();
+      if (containers.smq) {
+        await containers.smq.stop();
       }
 
       if (containers.postgres) {

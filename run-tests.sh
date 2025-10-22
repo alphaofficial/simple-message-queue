@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# SQS Bridge Test Runner
+# Simple Message Queue Test Runner
 # Runs all tests in the project with detailed output
 
 set -e
@@ -48,7 +48,7 @@ run_test_suite() {
 # Main test execution
 main() {
     echo "=========================================="
-    echo "          SQS Bridge Test Runner"
+    echo "          Simple Message Queue Test Runner"
     echo "=========================================="
     echo
 

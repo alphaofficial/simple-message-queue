@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"sqs-bridge/src/api"
-	"sqs-bridge/src/storage"
+	"simple-message-queue/src/api"
+	"simple-message-queue/src/storage"
 )
 
 // Simple mock storage that doesn't implement visibility timeout behavior for testing
@@ -213,7 +213,7 @@ func TestReceiveMessageVisibilityTimeoutFinal(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create fresh storage for each test
 			mockStorage := NewSimpleMockStorage()
-			handler := api.NewSQSHandler(mockStorage, "http://localhost:9324", "test_admin", "test_password")
+			handler := api.NewSMQHandler(mockStorage, "http://localhost:9324", "test_admin", "test_password")
 
 			// Create test queue
 			queue := &storage.Queue{

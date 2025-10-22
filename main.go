@@ -9,12 +9,13 @@ import (
 	"syscall"
 	"time"
 
+	"simple-message-queue/src/api"
+	"simple-message-queue/src/config"
+	"simple-message-queue/src/storage"
+	"simple-message-queue/src/storage/postgres"
+	"simple-message-queue/src/storage/sqlite"
+
 	"github.com/gin-gonic/gin"
-	"sqs-bridge/src/api"
-	"sqs-bridge/src/config"
-	"sqs-bridge/src/storage"
-	"sqs-bridge/src/storage/postgres"
-	"sqs-bridge/src/storage/sqlite"
 )
 
 func main() {
@@ -52,12 +53,12 @@ func main() {
 
 	defer storageInstance.Close()
 
-	// Initialize SQS handler
-	sqsHandler := api.NewSQSHandler(storageInstance, cfg.BaseURL, cfg.AdminUsername, cfg.AdminPassword)
+	// Initialize SMQ handler
+	smqHandler := api.NewSMQHandler(storageInstance, cfg.BaseURL, cfg.AdminUsername, cfg.AdminPassword)
 
 	// Setup Gin router
 	router := gin.New()
-	sqsHandler.SetupRoutes(router)
+	smqHandler.SetupRoutes(router)
 
 	server := &http.Server{
 		Addr:    ":" + cfg.Port,
@@ -66,7 +67,7 @@ func main() {
 
 	// Start server in goroutine
 	go func() {
-		log.Printf("Starting SQS server on port %s", cfg.Port)
+		log.Printf("Starting smq server on port %s", cfg.Port)
 		log.Printf("Base URL: %s", cfg.BaseURL)
 		log.Printf("Storage adapter: %s", cfg.StorageType)
 

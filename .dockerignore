@@ -2,8 +2,8 @@
 *.db
 *.log
 *.tmp
-sqs-bridge
-sqs-server
+smq-bridge
+smq-server
 
 # Development files
 .git

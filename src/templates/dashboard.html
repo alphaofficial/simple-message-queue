@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SQS Console - Enhanced Dashboard</title>
+    <title>SMQ Console - Enhanced Dashboard</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Google+Sans+Code:ital,wght@0,300..800;1,300..800&display=swap" rel="stylesheet">
@@ -661,7 +661,7 @@
 <body>
     <div class="header">
         <div class="header-content">
-            <h1>SQS Console</h1>
+            <h1>SMQ Console</h1>
             <button class="btn btn-secondary btn-sm" onclick="logout()" style="font-size: 11px; padding: 6px 12px;">
                 Logout
             </button>
@@ -869,7 +869,7 @@
                         <button class="btn btn-sm btn-secondary" onclick="copyToClipboard(document.getElementById('newAccessKeyId').value, 'Access Key ID copied!')">Copy</button>
                     </div>
                 </div>
-                
+
                 <div class="form-group">
                     <label class="form-label" style="color: var(--accent-red);">Secret Access Key</label>
                     <div style="display: flex; gap: 8px; align-items: center;">
@@ -881,7 +881,7 @@
                     </p>
                 </div>
             </div>
-            
+
             <div style="display: flex; gap: 12px; margin-top: 20px;">
                 <button class="btn" onclick="copyBothKeys()">Copy Both Keys</button>
                 <button class="btn btn-secondary" onclick="hideAccessKeyModal()">I've Saved the Keys</button>
@@ -1365,7 +1365,7 @@
 
         function displayAccessKeys(keys) {
             const accessKeysList = document.getElementById('accessKeysList');
-            
+
             if (keys.length > 0) {
                 accessKeysList.innerHTML = keys.map(key => `
                     <div class="queue-card access-key-item" style="border-left: 4px solid ${key.active ? 'var(--accent-green)' : 'var(--accent-red)'};">
@@ -1373,8 +1373,8 @@
                             <div style="display: flex; flex-direction: column; gap: 4px;">
                                 <div class="queue-name" style="font-size: 14px;">
                                     ${key.accessKeyId}
-                                    <span class="queue-type-badge ${key.active ? 'badge-standard' : 'badge-fifo'}" 
-                                          style="background: ${key.active ? 'rgba(0, 255, 136, 0.2)' : 'rgba(255, 51, 102, 0.2)'}; 
+                                    <span class="queue-type-badge ${key.active ? 'badge-standard' : 'badge-fifo'}"
+                                          style="background: ${key.active ? 'rgba(0, 255, 136, 0.2)' : 'rgba(255, 51, 102, 0.2)'};
                                                  color: ${key.active ? 'var(--accent-green)' : 'var(--accent-red)'};">
                                         ${key.active ? 'Active' : 'Inactive'}
                                     </span>
@@ -1384,7 +1384,7 @@
                                 </div>
                             </div>
                             <div class="queue-actions">
-                                ${key.active ? 
+                                ${key.active ?
                                     `<button class="btn btn-secondary btn-sm" onclick="deactivateAccessKey('${key.accessKeyId}')">Deactivate</button>` :
                                     ''
                                 }
@@ -1394,7 +1394,7 @@
                         ${key.secretAccessKey ? `
                         <div style="margin-top: 12px; padding: 12px; background: var(--bg-primary); border-radius: 4px; border: 1px solid var(--border-color);">
                             <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">Secret Key (save this now - it won't be shown again):</div>
-                            <div style="font-family: monospace; font-size: 11px; color: var(--accent-blue); word-break: break-all; cursor: pointer;" 
+                            <div style="font-family: monospace; font-size: 11px; color: var(--accent-blue); word-break: break-all; cursor: pointer;"
                                  onclick="copyToClipboard('${key.secretAccessKey}')">${key.secretAccessKey}</div>
                         </div>` : ''}
                     </div>
@@ -1418,7 +1418,7 @@
                 const response = await fetch('/api/auth/access-keys', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
+                    body: JSON.stringify({
                         name: name,
                         description: 'Created from dashboard'
                     })
@@ -1430,7 +1430,7 @@
                     document.getElementById('newAccessKeyId').value = data.accessKeyId;
                     document.getElementById('newSecretKey').value = data.secretAccessKey;
                     showAccessKeyModal();
-                    
+
                     // Refresh the list
                     loadAccessKeys();
                 } else {
@@ -1503,7 +1503,7 @@
             const accessKeyId = document.getElementById('newAccessKeyId').value;
             const secretKey = document.getElementById('newSecretKey').value;
             const bothKeys = `Access Key ID: ${accessKeyId}\nSecret Access Key: ${secretKey}`;
-            
+
             copyToClipboard(bothKeys, 'Both keys copied to clipboard!');
         }
 
@@ -1540,14 +1540,14 @@
         // Initialize tab from URL on page load
         function initializeTab() {
             const currentTab = getTabFromURL();
-            
+
             // Find and activate the correct tab
             const tabButton = document.querySelector(`[onclick="switchTab('${currentTab}')"]`);
             if (tabButton) {
                 // Remove active class from all tabs
                 document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
                 tabButton.classList.add('active');
-                
+
                 // Show correct tab content
                 document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
                 document.getElementById(currentTab + '-tab').classList.add('active');
@@ -1558,14 +1558,14 @@
         window.addEventListener('popstate', function(event) {
             if (event.state && event.state.tab) {
                 const tabName = event.state.tab;
-                
+
                 // Update tab without adding to history (since we're handling history event)
                 document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
                 const tabButton = document.querySelector(`[onclick="switchTab('${tabName}')"]`);
                 if (tabButton) {
                     tabButton.classList.add('active');
                 }
-                
+
                 document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
                 document.getElementById(tabName + '-tab').classList.add('active');
             }

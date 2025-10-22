@@ -1,18 +1,18 @@
 services:
-  sqs-bridge:
+  simple-message-queue:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: sqs-bridge
+    container_name: simple-message-queue
     restart: unless-stopped
     ports:
       - "8080:8080"
     volumes:
-      - sqs_data:/app/data
+      - smq_data:/app/data
     environment:
       - PORT=8080
       - STORAGE_ADAPTER=sqlite
-      - SQLITE_DB_PATH=/app/data/sqs.db
+      - SQLITE_DB_PATH=/app/data/smq.db
       - BASE_URL=http://localhost:8080
       - GIN_MODE=release
       - ADMIN_USERNAME=root
@@ -32,12 +32,12 @@ services:
       retries: 3
       start_period: 40s
     networks:
-      - sqs-network
+      - smq-network
 
 volumes:
-  sqs_data:
+  smq_data:
     driver: local
 
 networks:
-  sqs-network:
+  smq-network:
     driver: bridge

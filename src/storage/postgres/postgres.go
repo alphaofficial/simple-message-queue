@@ -15,7 +15,7 @@ import (
 	"github.com/lib/pq"
 	_ "github.com/lib/pq"
 
-	"sqs-bridge/src/storage"
+	"simple-message-queue/src/storage"
 )
 
 type PostgreSQLStorage struct {
@@ -43,7 +43,7 @@ func NewPostgreSQLStorage(databaseURL, host, port, user, password, dbname, schem
 	}
 
 	if schema == "" {
-		schema = "sqsbridge"
+		schema = "smq"
 	}
 
 	s := &PostgreSQLStorage{

@@ -10,7 +10,7 @@ import (
 )
 
 // SetupRoutes configures all routes for the Gin router
-func (h *SQSHandler) SetupRoutes(router *gin.Engine) {
+func (h *SMQHandler) SetupRoutes(router *gin.Engine) {
 	// Set Gin to release mode for production
 	gin.SetMode(gin.ReleaseMode)
 
@@ -57,7 +57,7 @@ func (h *SQSHandler) SetupRoutes(router *gin.Engine) {
 }
 
 // setupMiddleware configures Gin middleware
-func (h *SQSHandler) setupMiddleware(router *gin.Engine) {
+func (h *SMQHandler) setupMiddleware(router *gin.Engine) {
 	// CORS middleware
 	router.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"*"},
@@ -77,7 +77,7 @@ func (h *SQSHandler) setupMiddleware(router *gin.Engine) {
 }
 
 // ginHandleSQSProtocol handles all SQS protocol requests (form-encoded and JSON)
-func (h *SQSHandler) ginHandleSQSProtocol(c *gin.Context) {
+func (h *SMQHandler) ginHandleSQSProtocol(c *gin.Context) {
 	// Detect protocol based on Content-Type
 	contentType := c.GetHeader("Content-Type")
 	isJSONProtocol := strings.Contains(contentType, "application/x-amz-json-1.0")
@@ -130,7 +130,7 @@ func (h *SQSHandler) ginHandleSQSProtocol(c *gin.Context) {
 }
 
 // Legacy method for backwards compatibility - will be removed
-func (h *SQSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("WARNING: ServeHTTP called - this should not happen with Gin router\n")
 	fmt.Printf("DEBUG: %s %s\n", r.Method, r.URL.Path)
 
@@ -211,7 +211,7 @@ func (h *SQSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleJSONRequest routes JSON protocol requests to appropriate handlers
-func (h *SQSHandler) handleJSONRequest(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleJSONRequest(w http.ResponseWriter, r *http.Request) {
 	// Extract action from x-amz-target header (case-insensitive)
 	target := r.Header.Get("X-Amz-Target")
 	if target == "" {
@@ -266,7 +266,7 @@ func (h *SQSHandler) handleJSONRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleAPIRoutes handles dashboard API routes
-func (h *SQSHandler) handleAPIRoutes(w http.ResponseWriter, r *http.Request) {
+func (h *SMQHandler) handleAPIRoutes(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")

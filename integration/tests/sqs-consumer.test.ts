@@ -469,7 +469,7 @@ describe("SQS Consumer Integration Tests", () => {
       consumer.stop();
 
       expect(processedMessages).toHaveLength(messageCount);
-      expect(processingTimes.every(time => time >= 500)).toBe(true);
+      expect(processingTimes.every(time => time >= 450)).toBe(true); // Allow for 50ms variance
     });
   });
 

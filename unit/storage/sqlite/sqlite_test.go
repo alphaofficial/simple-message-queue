@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"sqs-bridge/src/storage"
-	"sqs-bridge/src/storage/sqlite"
+	"simple-message-queue/src/storage"
+	"simple-message-queue/src/storage/sqlite"
 )
 
 func setupTestDB(t *testing.T) *sqlite.SQLiteStorage {
