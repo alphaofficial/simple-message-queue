@@ -27,6 +27,9 @@ func (h *SMQHandler) SetupRoutes(router *gin.Engine) {
 	// Dashboard endpoint (protected)
 	router.GET("/", func(c *gin.Context) { h.requireAuth(h.handleDashboard)(c.Writer, c.Request) })
 
+	// Individual queue details page (protected)
+	router.GET("/queue/:name", func(c *gin.Context) { h.requireAuth(h.handleQueueDetails)(c.Writer, c.Request) })
+
 	// Dashboard API routes group (protected)
 	api := router.Group("/api")
 	{
@@ -39,6 +42,10 @@ func (h *SMQHandler) SetupRoutes(router *gin.Engine) {
 		api.POST("/messages/send", func(c *gin.Context) { h.requireAuth(h.handleAPISendMessage)(c.Writer, c.Request) })
 		api.DELETE("/messages/delete", func(c *gin.Context) { h.requireAuth(h.handleAPIDeleteMessage)(c.Writer, c.Request) })
 		api.GET("/queues/:name/messages", func(c *gin.Context) { h.requireAuth(h.handleAPIGetQueueMessages)(c.Writer, c.Request) })
+		api.GET("/queues/:name/attributes", func(c *gin.Context) { h.requireAuth(h.handleAPIGetQueueAttributes)(c.Writer, c.Request) })
+		api.POST("/queues/:name/purge", func(c *gin.Context) { h.requireAuth(h.handleAPIPurgeQueue)(c.Writer, c.Request) })
+		api.POST("/queues/:name/redrive", func(c *gin.Context) { h.requireAuth(h.handleAPIRedriveMessage)(c.Writer, c.Request) })
+		api.POST("/queues/:name/redrive-batch", func(c *gin.Context) { h.requireAuth(h.handleAPIRedriveBatch)(c.Writer, c.Request) })
 
 		// Access key management endpoints
 		api.POST("/auth/access-keys", func(c *gin.Context) { h.requireAuth(h.handleCreateAccessKey)(c.Writer, c.Request) })

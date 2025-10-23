@@ -1630,6 +1630,21 @@ func (h *SMQHandler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	w.Write(html)
 }
 
+func (h *SMQHandler) handleQueueDetails(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html")
+	w.WriteHeader(http.StatusOK)
+
+	// Read the queue details HTML template
+	html, err := os.ReadFile("src/templates/queue-details.html")
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("Error loading queue details template"))
+		return
+	}
+
+	w.Write(html)
+}
+
 func (h *SMQHandler) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 	// Get all queues
 	queues, err := h.storage.ListQueues(r.Context(), "")
@@ -1926,6 +1941,121 @@ func (h *SMQHandler) handleAPIGetQueueMessages(w http.ResponseWriter, r *http.Re
 	response += `]}`
 
 	w.Write([]byte(response))
+}
+
+func (h *SMQHandler) handleAPIGetQueueAttributes(w http.ResponseWriter, r *http.Request) {
+	// Extract queue name from path like /api/queues/my-queue/attributes
+	pathParts := strings.Split(r.URL.Path, "/")
+	if len(pathParts) != 5 {
+		http.Error(w, `{"error": "Invalid path"}`, http.StatusBadRequest)
+		return
+	}
+	queueName := pathParts[3]
+
+	// Get queue details
+	queue, err := h.storage.GetQueue(r.Context(), queueName)
+	if err != nil || queue == nil {
+		http.Error(w, `{"error": "Queue not found"}`, http.StatusNotFound)
+		return
+	}
+
+	// Get live message counts
+	allMessages, err := h.storage.GetInFlightMessages(r.Context(), queueName)
+	if err != nil {
+		http.Error(w, `{"error": "Failed to get messages"}`, http.StatusInternalServerError)
+		return
+	}
+
+	now := time.Now()
+	var availableCount, inFlightCount int
+
+	for _, msg := range allMessages {
+		// Check if message is in flight (invisible)
+		if msg.VisibleAt != nil && now.Before(*msg.VisibleAt) {
+			inFlightCount++
+		} else {
+			availableCount++
+		}
+	}
+
+	response := fmt.Sprintf(`{
+		"availableMessages": %d,
+		"inFlightMessages": %d,
+		"totalMessages": %d
+	}`, availableCount, inFlightCount, availableCount+inFlightCount)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(response))
+}
+
+func (h *SMQHandler) handleAPIPurgeQueue(w http.ResponseWriter, r *http.Request) {
+	// Extract queue name from path like /api/queues/my-queue/purge
+	pathParts := strings.Split(r.URL.Path, "/")
+	if len(pathParts) != 5 {
+		http.Error(w, `{"error": "Invalid path"}`, http.StatusBadRequest)
+		return
+	}
+	queueName := pathParts[3]
+
+	if err := h.storage.PurgeQueue(r.Context(), queueName); err != nil {
+		http.Error(w, `{"error": "Failed to purge queue"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"success": true}`))
+}
+
+func (h *SMQHandler) handleAPIRedriveMessage(w http.ResponseWriter, r *http.Request) {
+	// Extract queue name from path like /api/queues/my-queue/redrive
+	pathParts := strings.Split(r.URL.Path, "/")
+	if len(pathParts) != 5 {
+		http.Error(w, `{"error": "Invalid path"}`, http.StatusBadRequest)
+		return
+	}
+	_ = pathParts[3] // queueName - will be used for actual implementation
+
+	var request struct {
+		MessageId string `json:"messageId"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, `{"error": "Invalid JSON"}`, http.StatusBadRequest)
+		return
+	}
+
+	// For now, this is a placeholder - actual redrive implementation would need
+	// to move the message from DLQ back to the source queue
+	// This would require storing the source queue information in the message
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"success": true, "message": "Redrive functionality not yet implemented"}`))
+}
+
+func (h *SMQHandler) handleAPIRedriveBatch(w http.ResponseWriter, r *http.Request) {
+	// Extract queue name from path like /api/queues/my-queue/redrive-batch
+	pathParts := strings.Split(r.URL.Path, "/")
+	if len(pathParts) != 5 {
+		http.Error(w, `{"error": "Invalid path"}`, http.StatusBadRequest)
+		return
+	}
+	_ = pathParts[3] // queueName - will be used for actual implementation
+
+	var request struct {
+		MessageIds []string `json:"messageIds"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, `{"error": "Invalid JSON"}`, http.StatusBadRequest)
+		return
+	}
+
+	// For now, this is a placeholder - actual redrive implementation would need
+	// to move the messages from DLQ back to the source queue
+	// This would require storing the source queue information in the messages
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"success": true, "message": "Batch redrive functionality not yet implemented"}`))
 }
 
 // handleHealthCheck returns basic health status for Docker health checks

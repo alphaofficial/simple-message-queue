@@ -142,6 +142,15 @@
             transform: translateY(-1px);
         }
 
+        .btn-primary {
+            background: var(--accent-green);
+            color: var(--bg-primary);
+        }
+
+        .btn-primary:hover {
+            background: #00e67a;
+        }
+
         .btn-secondary {
             background: var(--bg-tertiary);
             color: var(--text-primary);
@@ -285,6 +294,16 @@
             display: flex;
             align-items: center;
             gap: 8px;
+        }
+
+        .queue-name.clickable {
+            cursor: pointer;
+            transition: color 0.2s ease;
+        }
+
+        .queue-name.clickable:hover {
+            color: var(--accent-green);
+            text-decoration: underline;
         }
 
         .queue-type-badge {
@@ -692,18 +711,6 @@
                 <div class="metric-value" id="totalQueues">-</div>
                 <div class="metric-subtitle">Active message queues</div>
             </div>
-
-            <div class="metric-card">
-                <div class="metric-title">Messages Available</div>
-                <div class="metric-value" id="totalMessages">-</div>
-                <div class="metric-subtitle">Ready for consumption</div>
-            </div>
-
-            <div class="metric-card">
-                <div class="metric-title">Messages in Flight</div>
-                <div class="metric-value" id="messagesInFlight">-</div>
-                <div class="metric-subtitle">Currently processing</div>
-            </div>
         </div>
 
         <div class="tabs">
@@ -725,6 +732,8 @@
                 </div>
             </div>
         </div>
+
+
 
         <div id="messages-tab" class="tab-content">
             <div class="section">
@@ -957,13 +966,16 @@
                     return `
                         <div class="queue-card">
                             <div class="queue-header">
-                                <div class="queue-name">
-                                    ${queue.name}
-                                    <span class="queue-type-badge ${isFifo ? 'badge-fifo' : 'badge-standard'}">
-                                        ${isFifo ? 'FIFO' : 'Standard'}
-                                    </span>
-                                </div>
+                                <div class="queue-name clickable" onclick="window.location.href='/queue/${queue.name}'">
+                                     ${queue.name}
+                                     <span class="queue-type-badge ${isFifo ? 'badge-fifo' : 'badge-standard'}">
+                                         ${isFifo ? 'FIFO' : 'Standard'}
+                                     </span>
+                                 </div>
                                 <div class="queue-actions">
+                                    <button class="btn btn-primary btn-sm" onclick="window.location.href='/queue/${queue.name}'">
+                                        View Details
+                                    </button>
                                     <button class="btn btn-secondary btn-sm" onclick="pollQueueMessages('${queue.name}')">
                                         Poll
                                     </button>
@@ -1329,7 +1341,6 @@
 
         function refreshData() {
             loadQueues();
-            fetchStatus();
         }
 
         function toggleAutoRefresh() {
@@ -1341,11 +1352,8 @@
             }
         }
 
-        // Initialize
-        refreshData();
-        loadAccessKeys();
-
         // Access Key management
+
         async function loadAccessKeys() {
             try {
                 const response = await fetch('/api/auth/access-keys');
@@ -1574,6 +1582,8 @@
         // Initialize when page loads
         document.addEventListener('DOMContentLoaded', function() {
             initializeTab();
+            refreshData(); // Load initial data
+            loadAccessKeys();
         });
 
         // Close modal when clicking outside
