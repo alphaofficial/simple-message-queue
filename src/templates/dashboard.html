@@ -849,6 +849,21 @@
                     </div>
                 </div>
 
+                <div class="form-checkbox">
+                    <input type="checkbox" id="enableDLQ" onchange="toggleDLQOptions()">
+                    <label for="enableDLQ">Enable Dead Letter Queue</label>
+                </div>
+
+                <div id="dlqOptions" style="display: none;">
+                    <div class="form-group">
+                        <label class="form-label" for="maxReceiveCount">Max Receive Count</label>
+                        <input id="maxReceiveCount" class="form-input" type="number" value="3" min="1" max="1000">
+                        <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+                            Messages will be moved to DLQ after this many failed delivery attempts
+                        </div>
+                    </div>
+                </div>
+
                 <div class="form-row">
                     <div class="form-group">
                         <label class="form-label" for="visibilityTimeout">Visibility Timeout (seconds)</label>
@@ -1111,9 +1126,18 @@
             document.getElementById('queueName').value = '';
             document.getElementById('isFifoQueue').checked = false;
             document.getElementById('contentBasedDeduplication').checked = false;
+            document.getElementById('enableDLQ').checked = false;
+            document.getElementById('maxReceiveCount').value = '3';
             document.getElementById('visibilityTimeout').value = '30';
             document.getElementById('messageRetention').value = '1209600';
             toggleFifoOptions();
+            toggleDLQOptions();
+        }
+
+        function toggleDLQOptions() {
+            const enableDLQ = document.getElementById('enableDLQ').checked;
+            const dlqOptions = document.getElementById('dlqOptions');
+            dlqOptions.style.display = enableDLQ ? 'block' : 'none';
         }
 
         function toggleFifoOptions() {
@@ -1139,6 +1163,8 @@
             const contentBasedDeduplication = document.getElementById('contentBasedDeduplication').checked;
             const visibilityTimeout = document.getElementById('visibilityTimeout').value;
             const messageRetention = document.getElementById('messageRetention').value;
+            const enableDLQ = document.getElementById('enableDLQ').checked;
+            const maxReceiveCount = document.getElementById('maxReceiveCount').value;
 
             // Validate FIFO queue name
             if (isFifo && !queueName.endsWith('.fifo')) {
@@ -1152,10 +1178,52 @@
             }
 
             try {
+                // First create DLQ if enabled
+                let dlqName = null;
+                if (enableDLQ) {
+                    dlqName = queueName + (isFifo ? '-dlq.fifo' : '-dlq');
+                    
+                    const dlqAttributes = {
+                        VisibilityTimeoutSeconds: visibilityTimeout,
+                        MessageRetentionPeriod: messageRetention
+                    };
+
+                    if (isFifo) {
+                        dlqAttributes.FifoQueue = 'true';
+                        if (contentBasedDeduplication) {
+                            dlqAttributes.ContentBasedDeduplication = 'true';
+                        }
+                    }
+
+                    const dlqResponse = await fetch('/api/queues', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            queueName: dlqName,
+                            attributes: dlqAttributes
+                        })
+                    });
+
+                    const dlqData = await dlqResponse.json();
+                    if (!dlqData.success) {
+                        alert('Failed to create DLQ: ' + (dlqData.error || 'Unknown error'));
+                        return;
+                    }
+                }
+
+                // Create main queue
                 const attributes = {
                     VisibilityTimeoutSeconds: visibilityTimeout,
                     MessageRetentionPeriod: messageRetention
                 };
+
+                if (enableDLQ && dlqName) {
+                    attributes.MaxReceiveCount = maxReceiveCount;
+                    attributes.RedrivePolicy = JSON.stringify({
+                        deadLetterTargetArn: `arn:aws:sqs:us-east-1:123456789012:${dlqName}`,
+                        maxReceiveCount: parseInt(maxReceiveCount)
+                    });
+                }
 
                 if (isFifo) {
                     attributes.FifoQueue = 'true';

@@ -142,6 +142,19 @@ func (h *SMQHandler) handleCreateQueue(w http.ResponseWriter, r *http.Request) {
 	}
 	if val, ok := attributes["RedrivePolicy"]; ok {
 		queue.RedrivePolicy = val
+		// Parse RedrivePolicy JSON to extract DLQ settings
+		var redrivePolicy struct {
+			DeadLetterTargetArn string `json:"deadLetterTargetArn"`
+			MaxReceiveCount     int    `json:"maxReceiveCount"`
+		}
+		if err := json.Unmarshal([]byte(val), &redrivePolicy); err == nil {
+			// Extract queue name from ARN (format: arn:aws:sqs:region:account:queuename)
+			parts := strings.Split(redrivePolicy.DeadLetterTargetArn, ":")
+			if len(parts) >= 6 {
+				queue.DeadLetterQueueName = parts[5]
+				queue.MaxReceiveCount = redrivePolicy.MaxReceiveCount
+			}
+		}
 	}
 
 	if val, ok := attributes["ContentBasedDeduplication"]; ok {
