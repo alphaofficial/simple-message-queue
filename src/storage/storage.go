@@ -91,6 +91,9 @@ type Storage interface {
 
 	// DLQ operations
 	MoveMessageToDLQ(ctx context.Context, message *Message, dlqName string) error
+	RedriveMessage(ctx context.Context, dlqName string, messageId string, sourceQueueName string) error
+	RedriveMessageBatch(ctx context.Context, dlqName string, messageIds []string, sourceQueueName string) error
+	GetSourceQueueForDLQ(ctx context.Context, dlqName string) (string, error)
 	GetExpiredMessages(ctx context.Context) ([]*Message, error)
 
 	// Dashboard operations

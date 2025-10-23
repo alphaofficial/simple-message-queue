@@ -594,6 +594,134 @@ func (s *PostgreSQLStorage) MoveMessageToDLQ(ctx context.Context, message *stora
 	return tx.Commit()
 }
 
+func (s *PostgreSQLStorage) RedriveMessage(ctx context.Context, dlqName string, messageId string, sourceQueueName string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// First, get the message from the DLQ
+	query := fmt.Sprintf(`
+		SELECT id, queue_name, body, attributes, message_attributes, receipt_handle,
+		receive_count, max_receive_count, visibility_timeout, delay_seconds,
+		md5_of_body, md5_of_attributes, message_group_id, message_deduplication_id,
+		sequence_number, deduplication_hash, created_at
+		FROM %s.messages 
+		WHERE id = $1 AND queue_name = $2`, pq.QuoteIdentifier(s.schema))
+
+	var message storage.Message
+	var attributesJSON, messageAttributesJSON sql.NullString
+	var visibilityTimeout sql.NullTime
+	var messageGroupId, messageDeduplicationId, sequenceNumber, deduplicationHash sql.NullString
+
+	err = tx.QueryRowContext(ctx, query, messageId, dlqName).Scan(
+		&message.ID, &message.QueueName, &message.Body,
+		&attributesJSON, &messageAttributesJSON, &message.ReceiptHandle,
+		&message.ReceiveCount, &message.MaxReceiveCount, &visibilityTimeout,
+		&message.DelaySeconds, &message.MD5OfBody, &message.MD5OfAttributes,
+		&messageGroupId, &messageDeduplicationId, &sequenceNumber, &deduplicationHash,
+		&message.CreatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to get message from DLQ: %w", err)
+	}
+
+	if attributesJSON.Valid {
+		json.Unmarshal([]byte(attributesJSON.String), &message.Attributes)
+	}
+	if messageAttributesJSON.Valid {
+		json.Unmarshal([]byte(messageAttributesJSON.String), &message.MessageAttributes)
+	}
+	if messageGroupId.Valid {
+		message.MessageGroupId = messageGroupId.String
+	}
+	if messageDeduplicationId.Valid {
+		message.MessageDeduplicationId = messageDeduplicationId.String
+	}
+	if sequenceNumber.Valid {
+		message.SequenceNumber = sequenceNumber.String
+	}
+	if deduplicationHash.Valid {
+		message.DeduplicationHash = deduplicationHash.String
+	}
+
+	// Create a new message for the source queue
+	newMessageId := uuid.New().String()
+	newReceiptHandle := uuid.New().String()
+
+	// Insert the message into the source queue
+	insertQuery := fmt.Sprintf(`
+		INSERT INTO %s.messages (
+			id, queue_name, body, attributes, message_attributes, receipt_handle,
+			receive_count, max_receive_count, visibility_timeout, delay_seconds,
+			md5_of_body, md5_of_attributes, message_group_id, message_deduplication_id,
+			sequence_number, deduplication_hash
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+	`, pq.QuoteIdentifier(s.schema))
+
+	newAttributesJSON := "{}"
+	if message.Attributes != nil {
+		if data, err := json.Marshal(message.Attributes); err == nil {
+			newAttributesJSON = string(data)
+		}
+	}
+
+	newMessageAttributesJSON := "{}"
+	if message.MessageAttributes != nil {
+		if data, err := json.Marshal(message.MessageAttributes); err == nil {
+			newMessageAttributesJSON = string(data)
+		}
+	}
+
+	_, err = tx.ExecContext(ctx, insertQuery,
+		newMessageId, sourceQueueName, message.Body, newAttributesJSON, newMessageAttributesJSON,
+		newReceiptHandle, 0, message.MaxReceiveCount, nil, message.DelaySeconds,
+		message.MD5OfBody, message.MD5OfAttributes, message.MessageGroupId,
+		message.MessageDeduplicationId, message.SequenceNumber, message.DeduplicationHash)
+	if err != nil {
+		return fmt.Errorf("failed to send message to source queue: %w", err)
+	}
+
+	// Delete the message from the DLQ
+	deleteQuery := fmt.Sprintf(`DELETE FROM %s.messages WHERE id = $1 AND queue_name = $2`, pq.QuoteIdentifier(s.schema))
+	_, err = tx.ExecContext(ctx, deleteQuery, messageId, dlqName)
+	if err != nil {
+		return fmt.Errorf("failed to delete message from DLQ: %w", err)
+	}
+
+	return tx.Commit()
+}
+
+func (s *PostgreSQLStorage) RedriveMessageBatch(ctx context.Context, dlqName string, messageIds []string, sourceQueueName string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	for _, messageId := range messageIds {
+		if err := s.RedriveMessage(ctx, dlqName, messageId, sourceQueueName); err != nil {
+			return fmt.Errorf("failed to redrive message %s: %w", messageId, err)
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (s *PostgreSQLStorage) GetSourceQueueForDLQ(ctx context.Context, dlqName string) (string, error) {
+	query := fmt.Sprintf(`SELECT name FROM %s.queues WHERE dead_letter_queue_name = $1`, pq.QuoteIdentifier(s.schema))
+	var sourceQueueName string
+	err := s.db.QueryRowContext(ctx, query, dlqName).Scan(&sourceQueueName)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", fmt.Errorf("no source queue found for DLQ: %s", dlqName)
+		}
+		return "", fmt.Errorf("failed to get source queue for DLQ: %w", err)
+	}
+	return sourceQueueName, nil
+}
+
 func (s *PostgreSQLStorage) ChangeMessageVisibilityBatch(ctx context.Context, queueName string, entries []storage.VisibilityEntry) error {
 	if len(entries) == 0 {
 		return nil

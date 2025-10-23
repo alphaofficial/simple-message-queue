@@ -2013,7 +2013,7 @@ func (h *SMQHandler) handleAPIRedriveMessage(w http.ResponseWriter, r *http.Requ
 		http.Error(w, `{"error": "Invalid path"}`, http.StatusBadRequest)
 		return
 	}
-	_ = pathParts[3] // queueName - will be used for actual implementation
+	dlqName := pathParts[3]
 
 	var request struct {
 		MessageId string `json:"messageId"`
@@ -2024,12 +2024,22 @@ func (h *SMQHandler) handleAPIRedriveMessage(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// For now, this is a placeholder - actual redrive implementation would need
-	// to move the message from DLQ back to the source queue
-	// This would require storing the source queue information in the message
+	// Get the source queue for this DLQ
+	sourceQueueName, err := h.storage.GetSourceQueueForDLQ(r.Context(), dlqName)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": "Failed to find source queue: %s"}`, err.Error()), http.StatusNotFound)
+		return
+	}
+
+	// Redrive the message
+	err = h.storage.RedriveMessage(r.Context(), dlqName, request.MessageId, sourceQueueName)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": "Failed to redrive message: %s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"success": true, "message": "Redrive functionality not yet implemented"}`))
+	w.Write([]byte(`{"success": true, "message": "Message redriven successfully"}`))
 }
 
 func (h *SMQHandler) handleAPIRedriveBatch(w http.ResponseWriter, r *http.Request) {
@@ -2039,7 +2049,7 @@ func (h *SMQHandler) handleAPIRedriveBatch(w http.ResponseWriter, r *http.Reques
 		http.Error(w, `{"error": "Invalid path"}`, http.StatusBadRequest)
 		return
 	}
-	_ = pathParts[3] // queueName - will be used for actual implementation
+	dlqName := pathParts[3]
 
 	var request struct {
 		MessageIds []string `json:"messageIds"`
@@ -2050,12 +2060,22 @@ func (h *SMQHandler) handleAPIRedriveBatch(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// For now, this is a placeholder - actual redrive implementation would need
-	// to move the messages from DLQ back to the source queue
-	// This would require storing the source queue information in the messages
+	// Get the source queue for this DLQ
+	sourceQueueName, err := h.storage.GetSourceQueueForDLQ(r.Context(), dlqName)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": "Failed to find source queue: %s"}`, err.Error()), http.StatusNotFound)
+		return
+	}
+
+	// Redrive the messages
+	err = h.storage.RedriveMessageBatch(r.Context(), dlqName, request.MessageIds, sourceQueueName)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": "Failed to redrive messages: %s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"success": true, "message": "Batch redrive functionality not yet implemented"}`))
+	w.Write([]byte(fmt.Sprintf(`{"success": true, "message": "Successfully redriven %d messages"}`, len(request.MessageIds))))
 }
 
 // handleHealthCheck returns basic health status for Docker health checks
