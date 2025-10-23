@@ -846,7 +846,7 @@
                                 <div class="message-expand-hint">Click to expand</div>
                             </div>
                             <div class="message-actions">
-                                <span class="badge badge-info">Count: ${msg.receiveCount}</span>
+                                <span class="badge badge-info">Count: ${msg.attributes.ApproximateReceiveCount}</span>
                                 <div class="message-action-buttons">
                                     ${isDLQ ? `<button class="btn btn-sm" onclick="redriveMessage('${msg.id}')">Redrive</button>` : ''}
                                     <button class="btn btn-danger btn-sm" onclick="deleteMessage('${msg.id}')">Delete</button>

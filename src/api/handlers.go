@@ -1934,9 +1934,14 @@ func (h *SMQHandler) handleAPIGetQueueMessages(w http.ResponseWriter, r *http.Re
 			"id": "%s",
 			"body": %s,
 			"sentTimestamp": "%s",
-			"receiveCount": %d
+			"receiveCount": %d,
+			"attributes": {
+				"SentTimestamp": "%d",
+				"ApproximateReceiveCount": "%d"
+			}
 		}`, msg.ID, strconv.Quote(msg.Body),
-			msg.CreatedAt.Format(time.RFC3339), msg.ReceiveCount)
+			msg.CreatedAt.Format(time.RFC3339), msg.ReceiveCount,
+			msg.CreatedAt.UnixMilli(), msg.ReceiveCount)
 	}
 	response += `]}`
 

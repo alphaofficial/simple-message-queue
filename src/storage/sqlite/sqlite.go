@@ -381,6 +381,108 @@ func (s *SQLiteStorage) ReceiveMessages(ctx context.Context, queueName string, m
 	}
 	defer tx.Rollback()
 
+	// Get queue and DLQ information
+	var dlqName sql.NullString
+	var queueMaxReceiveCount int
+	err = tx.QueryRowContext(ctx, "SELECT dead_letter_queue_name, max_receive_count FROM queues WHERE name = ?", queueName).Scan(&dlqName, &queueMaxReceiveCount)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get queue info: %w", err)
+	}
+
+	// First, cleanup any messages that exceed max receive count and move them to DLQ
+	if dlqName.Valid && dlqName.String != "" && queueMaxReceiveCount > 0 {
+		// Find messages that should be in DLQ (already exceed max receive count)
+		dlqCandidatesQuery := `SELECT id, queue_name, body, attributes, message_attributes, receipt_handle,
+			receive_count, max_receive_count, visibility_timeout, created_at,
+			delay_seconds, md5_of_body, md5_of_attributes,
+			message_group_id, message_deduplication_id, sequence_number, deduplication_hash
+			FROM messages 
+			WHERE queue_name = ? AND receive_count >= ?`
+
+		dlqRows, err := tx.QueryContext(ctx, dlqCandidatesQuery, queueName, queueMaxReceiveCount)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query DLQ candidates: %w", err)
+		}
+
+		var dlqCandidates []*storage.Message
+		for dlqRows.Next() {
+			var message storage.Message
+			var attributesJSON, messageAttributesJSON sql.NullString
+			var dbVisibilityTimeout sql.NullTime
+			var messageGroupId, messageDeduplicationId, sequenceNumber, deduplicationHash sql.NullString
+
+			err := dlqRows.Scan(
+				&message.ID, &message.QueueName, &message.Body,
+				&attributesJSON, &messageAttributesJSON, &message.ReceiptHandle,
+				&message.ReceiveCount, &message.MaxReceiveCount, &dbVisibilityTimeout,
+				&message.CreatedAt, &message.DelaySeconds, &message.MD5OfBody, &message.MD5OfAttributes,
+				&messageGroupId, &messageDeduplicationId, &sequenceNumber, &deduplicationHash,
+			)
+			if err != nil {
+				dlqRows.Close()
+				return nil, fmt.Errorf("failed to scan DLQ candidate: %w", err)
+			}
+
+			if attributesJSON.Valid {
+				json.Unmarshal([]byte(attributesJSON.String), &message.Attributes)
+			}
+			if messageAttributesJSON.Valid {
+				json.Unmarshal([]byte(messageAttributesJSON.String), &message.MessageAttributes)
+			}
+			if messageGroupId.Valid {
+				message.MessageGroupId = messageGroupId.String
+			}
+			if messageDeduplicationId.Valid {
+				message.MessageDeduplicationId = messageDeduplicationId.String
+			}
+			if sequenceNumber.Valid {
+				message.SequenceNumber = sequenceNumber.String
+			}
+			if deduplicationHash.Valid {
+				message.DeduplicationHash = deduplicationHash.String
+			}
+
+			dlqCandidates = append(dlqCandidates, &message)
+		}
+		dlqRows.Close()
+
+		// Move candidates to DLQ
+		for _, message := range dlqCandidates {
+			// Delete from main queue
+			_, err = tx.ExecContext(ctx, "DELETE FROM messages WHERE id = ?", message.ID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to delete message from main queue: %w", err)
+			}
+
+			// Add to DLQ with reset receive count
+			dlqMessage := *message
+			dlqMessage.QueueName = dlqName.String
+			dlqMessage.ID = uuid.New().String()
+			dlqMessage.ReceiptHandle = uuid.New().String()
+			dlqMessage.ReceiveCount = 0
+			dlqMessage.VisibilityTimeout = time.Time{}
+
+			attributesJSON, _ := json.Marshal(dlqMessage.Attributes)
+			messageAttributesJSON, _ := json.Marshal(dlqMessage.MessageAttributes)
+
+			_, err = tx.ExecContext(ctx, `
+				INSERT INTO messages (id, queue_name, body, attributes, message_attributes, receipt_handle,
+				receive_count, max_receive_count, visibility_timeout, created_at, delay_seconds,
+				md5_of_body, md5_of_attributes, message_group_id, message_deduplication_id,
+				sequence_number, deduplication_hash)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				dlqMessage.ID, dlqMessage.QueueName, dlqMessage.Body, string(attributesJSON),
+				string(messageAttributesJSON), dlqMessage.ReceiptHandle, dlqMessage.ReceiveCount,
+				queueMaxReceiveCount, nil, dlqMessage.CreatedAt, dlqMessage.DelaySeconds,
+				dlqMessage.MD5OfBody, dlqMessage.MD5OfAttributes, dlqMessage.MessageGroupId,
+				dlqMessage.MessageDeduplicationId, dlqMessage.SequenceNumber, dlqMessage.DeduplicationHash,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("failed to move message to DLQ: %w", err)
+			}
+		}
+	}
+
 	// Check if this is a FIFO queue by examining queue table
 	var isFifoQueue bool
 	err = tx.QueryRowContext(ctx, "SELECT fifo_queue FROM queues WHERE name = ?", queueName).Scan(&isFifoQueue)
@@ -388,7 +490,7 @@ func (s *SQLiteStorage) ReceiveMessages(ctx context.Context, queueName string, m
 		return nil, fmt.Errorf("failed to check queue type: %w", err)
 	}
 
-	// Select messages that are available (not in visibility timeout)
+	// Select messages that are available (not in visibility timeout) AND not exceeding max receive count
 	var query string
 	if isFifoQueue {
 		// For FIFO queues: order by message_group_id first, then by sequence_number for proper FIFO ordering
@@ -399,6 +501,7 @@ func (s *SQLiteStorage) ReceiveMessages(ctx context.Context, queueName string, m
 			FROM messages 
 			WHERE queue_name = ? AND (visibility_timeout IS NULL OR visibility_timeout <= ?)
 			      AND (delay_seconds = 0 OR datetime(created_at, '+' || delay_seconds || ' seconds') <= ?)
+			      AND (? = 0 OR receive_count < ?)
 			ORDER BY message_group_id ASC, sequence_number ASC
 			LIMIT ?`
 	} else {
@@ -410,11 +513,12 @@ func (s *SQLiteStorage) ReceiveMessages(ctx context.Context, queueName string, m
 			FROM messages 
 			WHERE queue_name = ? AND (visibility_timeout IS NULL OR visibility_timeout <= ?)
 			      AND (delay_seconds = 0 OR datetime(created_at, '+' || delay_seconds || ' seconds') <= ?)
+			      AND (? = 0 OR receive_count < ?)
 			ORDER BY created_at ASC
 			LIMIT ?`
 	}
 
-	rows, err := tx.QueryContext(ctx, query, queueName, now, now, maxMessages)
+	rows, err := tx.QueryContext(ctx, query, queueName, now, now, queueMaxReceiveCount, queueMaxReceiveCount, maxMessages)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query messages: %w", err)
 	}
@@ -462,6 +566,36 @@ func (s *SQLiteStorage) ReceiveMessages(ctx context.Context, queueName string, m
 		}
 		if deduplicationHash.Valid {
 			message.DeduplicationHash = deduplicationHash.String
+		}
+
+		// Check if message would exceed max receive count AFTER incrementing (use queue's max receive count)
+		if queueMaxReceiveCount > 0 && message.ReceiveCount+1 >= queueMaxReceiveCount {
+			// Move message to DLQ immediately
+			if dlqName.Valid && dlqName.String != "" {
+				newReceiptHandle := uuid.New().String()
+				_, err = tx.ExecContext(ctx, `
+					INSERT INTO messages (id, queue_name, body, attributes, message_attributes, receipt_handle,
+						receive_count, max_receive_count, visibility_timeout, created_at, delay_seconds,
+						md5_of_body, md5_of_attributes, message_group_id, message_deduplication_id, 
+						sequence_number, deduplication_hash)
+					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+					uuid.New().String(), dlqName.String, message.Body, message.Attributes,
+					message.MessageAttributes, newReceiptHandle, 0, queueMaxReceiveCount,
+					nil, message.CreatedAt, message.DelaySeconds, message.MD5OfBody,
+					message.MD5OfAttributes, message.MessageGroupId, message.MessageDeduplicationId,
+					message.SequenceNumber, message.DeduplicationHash,
+				)
+				if err != nil {
+					return nil, fmt.Errorf("failed to move message to DLQ: %w", err)
+				}
+
+				// Delete from original queue
+				_, err = tx.ExecContext(ctx, "DELETE FROM messages WHERE id = ?", message.ID)
+				if err != nil {
+					return nil, fmt.Errorf("failed to delete message from original queue: %w", err)
+				}
+			}
+			continue
 		}
 
 		// Update for return

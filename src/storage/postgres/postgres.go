@@ -320,14 +320,114 @@ func (s *PostgreSQLStorage) ReceiveMessages(ctx context.Context, queueName strin
 	}
 	defer tx.Rollback()
 
-	// Check if this is a FIFO queue by examining queue table
+	// Get queue and DLQ information
+	var dlqName sql.NullString
+	var queueMaxReceiveCount int
 	var isFifoQueue bool
-	err = tx.QueryRowContext(ctx, fmt.Sprintf("SELECT fifo_queue FROM %s.queues WHERE name = $1", pq.QuoteIdentifier(s.schema)), queueName).Scan(&isFifoQueue)
+	err = tx.QueryRowContext(ctx, fmt.Sprintf("SELECT dead_letter_queue_name, max_receive_count, fifo_queue FROM %s.queues WHERE name = $1", pq.QuoteIdentifier(s.schema)), queueName).Scan(&dlqName, &queueMaxReceiveCount, &isFifoQueue)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check queue type: %w", err)
+		return nil, fmt.Errorf("failed to get queue info: %w", err)
 	}
 
-	// Select messages that are available (not in visibility timeout)
+	// First, cleanup any messages that exceed max receive count and move them to DLQ
+	if dlqName.Valid && dlqName.String != "" && queueMaxReceiveCount > 0 {
+		// Find messages that should be in DLQ (already exceed max receive count)
+		dlqCandidatesQuery := fmt.Sprintf(`
+			SELECT id, queue_name, body, attributes, message_attributes, receipt_handle,
+			       receive_count, max_receive_count, visibility_timeout, created_at,
+			       delay_seconds, md5_of_body, md5_of_attributes,
+			       message_group_id, message_deduplication_id, sequence_number, deduplication_hash
+			FROM %s.messages 
+			WHERE queue_name = $1 AND receive_count >= $2
+		`, pq.QuoteIdentifier(s.schema))
+
+		dlqRows, err := tx.QueryContext(ctx, dlqCandidatesQuery, queueName, queueMaxReceiveCount)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query DLQ candidates: %w", err)
+		}
+
+		var dlqCandidates []*storage.Message
+		for dlqRows.Next() {
+			var message storage.Message
+			var attributesJSON, messageAttributesJSON string
+			var dbVisibilityTimeout sql.NullTime
+			var messageGroupId, messageDeduplicationId, sequenceNumber, deduplicationHash sql.NullString
+			var createdAt time.Time
+
+			err := dlqRows.Scan(
+				&message.ID, &message.QueueName, &message.Body,
+				&attributesJSON, &messageAttributesJSON, &message.ReceiptHandle,
+				&message.ReceiveCount, &message.MaxReceiveCount, &dbVisibilityTimeout,
+				&createdAt, &message.DelaySeconds, &message.MD5OfBody, &message.MD5OfAttributes,
+				&messageGroupId, &messageDeduplicationId, &sequenceNumber, &deduplicationHash,
+			)
+			if err != nil {
+				dlqRows.Close()
+				return nil, fmt.Errorf("failed to scan DLQ candidate: %w", err)
+			}
+
+			if attributesJSON != "" {
+				json.Unmarshal([]byte(attributesJSON), &message.Attributes)
+			}
+			if messageAttributesJSON != "" {
+				json.Unmarshal([]byte(messageAttributesJSON), &message.MessageAttributes)
+			}
+			if messageGroupId.Valid {
+				message.MessageGroupId = messageGroupId.String
+			}
+			if messageDeduplicationId.Valid {
+				message.MessageDeduplicationId = messageDeduplicationId.String
+			}
+			if sequenceNumber.Valid {
+				message.SequenceNumber = sequenceNumber.String
+			}
+			if deduplicationHash.Valid {
+				message.DeduplicationHash = deduplicationHash.String
+			}
+
+			message.CreatedAt = createdAt
+			dlqCandidates = append(dlqCandidates, &message)
+		}
+		dlqRows.Close()
+
+		// Move candidates to DLQ
+		for _, message := range dlqCandidates {
+			// Delete from main queue
+			_, err = tx.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s.messages WHERE id = $1", pq.QuoteIdentifier(s.schema)), message.ID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to delete message from main queue: %w", err)
+			}
+
+			// Add to DLQ with reset receive count
+			dlqMessage := *message
+			dlqMessage.QueueName = dlqName.String
+			dlqMessage.ID = uuid.New().String()
+			dlqMessage.ReceiptHandle = uuid.New().String()
+			dlqMessage.ReceiveCount = 0
+			dlqMessage.VisibilityTimeout = time.Time{}
+
+			attributesJSON, _ := json.Marshal(dlqMessage.Attributes)
+			messageAttributesJSON, _ := json.Marshal(dlqMessage.MessageAttributes)
+
+			_, err = tx.ExecContext(ctx, fmt.Sprintf(`
+				INSERT INTO %s.messages (id, queue_name, body, attributes, message_attributes, receipt_handle,
+				receive_count, max_receive_count, visibility_timeout, created_at, delay_seconds,
+				md5_of_body, md5_of_attributes, message_group_id, message_deduplication_id,
+				sequence_number, deduplication_hash)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`, pq.QuoteIdentifier(s.schema)),
+				dlqMessage.ID, dlqMessage.QueueName, dlqMessage.Body, string(attributesJSON),
+				string(messageAttributesJSON), dlqMessage.ReceiptHandle, dlqMessage.ReceiveCount,
+				queueMaxReceiveCount, nil, dlqMessage.CreatedAt, dlqMessage.DelaySeconds,
+				dlqMessage.MD5OfBody, dlqMessage.MD5OfAttributes, dlqMessage.MessageGroupId,
+				dlqMessage.MessageDeduplicationId, dlqMessage.SequenceNumber, dlqMessage.DeduplicationHash,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("failed to move message to DLQ: %w", err)
+			}
+		}
+	}
+
+	// Select messages that are available (not in visibility timeout) AND not exceeding max receive count
 	var query string
 	if isFifoQueue {
 		// For FIFO queues: order by message_group_id first, then by sequence_number for proper FIFO ordering
@@ -339,8 +439,9 @@ func (s *PostgreSQLStorage) ReceiveMessages(ctx context.Context, queueName strin
 			FROM %s.messages 
 			WHERE queue_name = $1 AND (visibility_timeout IS NULL OR visibility_timeout <= $2)
 			      AND (delay_seconds = 0 OR created_at + INTERVAL '1 second' * delay_seconds <= $2)
+			      AND ($3 = 0 OR receive_count < $3)
 			ORDER BY message_group_id ASC, sequence_number ASC
-			LIMIT $3
+			LIMIT $4
 			FOR UPDATE SKIP LOCKED
 		`, pq.QuoteIdentifier(s.schema))
 	} else {
@@ -353,13 +454,14 @@ func (s *PostgreSQLStorage) ReceiveMessages(ctx context.Context, queueName strin
 			FROM %s.messages 
 			WHERE queue_name = $1 AND (visibility_timeout IS NULL OR visibility_timeout <= $2)
 			      AND (delay_seconds = 0 OR created_at + INTERVAL '1 second' * delay_seconds <= $2)
+			      AND ($3 = 0 OR receive_count < $3)
 			ORDER BY created_at ASC
-			LIMIT $3
+			LIMIT $4
 			FOR UPDATE SKIP LOCKED
 		`, pq.QuoteIdentifier(s.schema))
 	}
 
-	rows, err := tx.QueryContext(ctx, query, queueName, now, maxMessages)
+	rows, err := tx.QueryContext(ctx, query, queueName, now, queueMaxReceiveCount, maxMessages)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query messages: %w", err)
 	}
@@ -410,8 +512,40 @@ func (s *PostgreSQLStorage) ReceiveMessages(ctx context.Context, queueName strin
 			message.DeduplicationHash = deduplicationHash.String
 		}
 
+		// Check if message would exceed max receive count AFTER incrementing (use queue's max receive count)
+		if queueMaxReceiveCount > 0 && message.ReceiveCount+1 >= queueMaxReceiveCount {
+			// Move message to DLQ immediately
+			if dlqName.Valid && dlqName.String != "" {
+				newReceiptHandle := uuid.New().String()
+				_, err = tx.ExecContext(ctx, fmt.Sprintf(`
+					INSERT INTO %s.messages (id, queue_name, body, attributes, message_attributes, receipt_handle,
+						receive_count, max_receive_count, visibility_timeout, created_at, delay_seconds,
+						md5_of_body, md5_of_attributes, message_group_id, message_deduplication_id, 
+						sequence_number, deduplication_hash)
+					VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+					pq.QuoteIdentifier(s.schema)),
+					uuid.New().String(), dlqName.String, message.Body, message.Attributes,
+					message.MessageAttributes, newReceiptHandle, 0, queueMaxReceiveCount,
+					nil, message.CreatedAt, message.DelaySeconds, message.MD5OfBody,
+					message.MD5OfAttributes, message.MessageGroupId, message.MessageDeduplicationId,
+					message.SequenceNumber, message.DeduplicationHash,
+				)
+				if err != nil {
+					return nil, fmt.Errorf("failed to move message to DLQ: %w", err)
+				}
+
+				// Delete from original queue
+				_, err = tx.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s.messages WHERE id = $1", pq.QuoteIdentifier(s.schema)), message.ID)
+				if err != nil {
+					return nil, fmt.Errorf("failed to delete message from original queue: %w", err)
+				}
+			}
+			continue
+		}
+
 		// Update for return
 		message.ReceiveCount++
+		message.CreatedAt = createdAt
 		message.ReceiptHandle = uuid.New().String()
 
 		// Use the provided visibility timeout or queue default (30 seconds)
@@ -420,7 +554,6 @@ func (s *PostgreSQLStorage) ReceiveMessages(ctx context.Context, queueName strin
 			timeoutDuration = visibilityTimeout
 		}
 		message.VisibilityTimeout = now.Add(time.Duration(timeoutDuration) * time.Second)
-		message.CreatedAt = createdAt
 
 		messages = append(messages, &message)
 		messageIDs = append(messageIDs, message.ID)
