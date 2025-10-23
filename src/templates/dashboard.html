@@ -1018,6 +1018,39 @@
             }
         }
 
+        function fuzzyMatch(text, pattern) {
+            const textLower = text.toLowerCase();
+            const patternLower = pattern.toLowerCase();
+            
+            if (patternLower === '') return true;
+            if (textLower.includes(patternLower)) return true;
+            
+            let textIndex = 0;
+            let patternIndex = 0;
+            
+            while (textIndex < textLower.length && patternIndex < patternLower.length) {
+                if (textLower[textIndex] === patternLower[patternIndex]) {
+                    patternIndex++;
+                }
+                textIndex++;
+            }
+            
+            return patternIndex === patternLower.length;
+        }
+
+        function filterQueues() {
+            const searchTerm = document.getElementById('queueSearch').value;
+            
+            if (searchTerm === '') {
+                displayQueues(currentQueues);
+            } else {
+                const filteredQueues = currentQueues.filter(queue => 
+                    fuzzyMatch(queue.name, searchTerm)
+                );
+                displayQueues(filteredQueues);
+            }
+        }
+
         function updateQueueSelects() {
             const messageSelect = document.getElementById('messageQueueSelect');
             const sendSelect = document.getElementById('sendQueueSelect');
@@ -1411,38 +1444,18 @@
                             <div class="queue-actions">
                                 ${key.active ?
                                     `<button class="btn btn-secondary btn-sm" onclick="deactivateAccessKey('${key.accessKeyId}')">Deactivate</button>` :
-                                    ''
-        }
-
-        function filterQueues() {
-            const searchTerm = document.getElementById('queueSearch').value.toLowerCase();
-            
-            if (searchTerm === '') {
-                displayQueues(currentQueues);
-            } else {
-                const filteredQueues = currentQueues.filter(queue => 
-                    queue.name.toLowerCase().includes(searchTerm)
-                );
-                displayQueues(filteredQueues);
-            }
-        }
-                                <button class="btn btn-danger btn-sm" onclick="deleteAccessKey('${key.accessKeyId}')">Delete</button>
+                                    `<button class="btn btn-danger btn-sm" onclick="deleteAccessKey('${key.accessKeyId}')">Delete</button>`
+                                }
                             </div>
                         </div>
-                        ${key.secretAccessKey ? `
-                        <div style="margin-top: 12px; padding: 12px; background: var(--bg-primary); border-radius: 4px; border: 1px solid var(--border-color);">
-                            <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">Secret Key (save this now - it won't be shown again):</div>
-                            <div style="font-family: monospace; font-size: 11px; color: var(--accent-blue); word-break: break-all; cursor: pointer;"
-                                 onclick="copyToClipboard('${key.secretAccessKey}')">${key.secretAccessKey}</div>
-                        </div>` : ''}
                     </div>
                 `).join('');
             } else {
                 accessKeysList.innerHTML = `
                     <div class="empty-state">
-                        <div class="empty-state-icon">🔐</div>
+                        <div class="empty-state-icon"></div>
                         <h3>No access keys found</h3>
-                        <p>Create your first access key to authenticate API requests</p>
+                        <p>Create your first access key to get started</p>
                     </div>
                 `;
             }
