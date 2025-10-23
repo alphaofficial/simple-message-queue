@@ -323,9 +323,40 @@
             line-height: 1.4;
             background: var(--bg-primary);
             color: var(--text-primary);
-            max-height: 200px;
-            overflow-y: auto;
+            max-height: 100px;
+            overflow: hidden;
             border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: max-height 0.3s ease;
+            position: relative;
+        }
+        
+        .message-body.expanded {
+            max-height: none;
+            overflow-y: auto;
+        }
+        
+        .message-body:not(.expanded)::after {
+            content: "";
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 30px;
+            background: linear-gradient(transparent, var(--bg-primary));
+            pointer-events: none;
+        }
+        
+        .message-expand-hint {
+            position: absolute;
+            bottom: 8px;
+            right: 16px;
+            font-size: 10px;
+            color: var(--text-muted);
+            background: var(--bg-primary);
+            padding: 2px 6px;
+            border-radius: 3px;
+            border: 1px solid var(--border-color);
         }
 
         .message-actions {
@@ -334,6 +365,12 @@
             justify-content: space-between;
             align-items: center;
             background: var(--bg-tertiary);
+        }
+        
+        .message-action-buttons {
+            display: flex;
+            gap: 8px;
+            align-items: center;
         }
 
         .badge {
@@ -466,11 +503,11 @@
         <div class="section">
             <div class="section-header">
                 <div class="section-title">Messages</div>
-                <div>
+                <div style="display: flex; gap: 8px; align-items: center;">
                     <button class="btn btn-secondary btn-sm" onclick="refreshMessages()">
                         Refresh
                     </button>
-                    <button class="btn btn-secondary btn-sm" onclick="toggleAutoRefresh()">
+                    <button class="btn btn-secondary btn-sm" onclick="toggleAutoRefresh()" id="autoRefreshBtn">
                         Auto-refresh
                     </button>
                 </div>
@@ -478,10 +515,10 @@
 
             <!-- Bulk Actions for DLQ -->
             <div class="bulk-actions" id="bulkActions">
-                <div>
+                <div style="display: flex; align-items: center; gap: 8px;">
                     <span id="selectedCount">0</span> messages selected
                 </div>
-                <div>
+                <div style="display: flex; gap: 8px; align-items: center;">
                     <button class="btn btn-secondary btn-sm" onclick="selectAll()">
                         Select All
                     </button>
@@ -504,6 +541,8 @@
         let autoRefreshInterval;
         let isDLQ = false;
         let selectedMessages = new Set();
+        let allMessages = [];
+        let filteredMessages = [];
 
         // Get queue name from URL
         function getCurrentQueueName() {
@@ -559,7 +598,7 @@
                 console.error('Failed to load messages:', error);
                 document.getElementById('messagesList').innerHTML = `
                     <div class="empty-state" style="color: var(--accent-red);">
-                        <div class="empty-state-icon">⚠️</div>
+                        <div class="empty-state-icon">⚠</div>
                         <h3>Failed to load messages</h3>
                         <p>Unable to connect to the queue</p>
                     </div>
@@ -568,47 +607,9 @@
         }
 
         function displayMessages(messages) {
-            const messagesList = document.getElementById('messagesList');
-            
-            if (messages.length > 0) {
-                let html = '';
-                messages.forEach(msg => {
-                    const isSelected = selectedMessages.has(msg.id);
-                    html += `
-                        <div class="message-card">
-                            <div class="message-header">
-                                <div style="display: flex; align-items: center;">
-                                    ${isDLQ ? `<input type="checkbox" class="message-checkbox" ${isSelected ? 'checked' : ''} onchange="toggleMessageSelection('${msg.id}')" />` : ''}
-                                    <div class="message-id">${msg.id}</div>
-                                </div>
-                                <div class="message-timestamp">${new Date(msg.sentTimestamp).toLocaleString()}</div>
-                            </div>
-                            <div class="message-body">${formatJSON(msg.body)}</div>
-                            <div class="message-actions">
-                                <span class="badge badge-info">Count: ${msg.receiveCount}</span>
-                                <div>
-                                    ${isDLQ ? `<button class="btn btn-sm" onclick="redriveMessage('${msg.id}')">Redrive</button>` : ''}
-                                    <button class="btn btn-danger btn-sm" onclick="deleteMessage('${msg.id}')">Delete</button>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                });
-                messagesList.innerHTML = html;
-                
-                // Show/hide bulk actions for DLQ
-                if (isDLQ) {
-                    updateBulkActionsVisibility();
-                }
-            } else {
-                messagesList.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon">📭</div>
-                        <h3>No messages found</h3>
-                        <p>This queue is currently empty</p>
-                    </div>
-                `;
-            }
+            allMessages = messages || [];
+            filteredMessages = allMessages;
+            displayFilteredMessages();
         }
 
         function formatJSON(text) {
@@ -807,8 +808,75 @@
             if (autoRefreshInterval) {
                 clearInterval(autoRefreshInterval);
                 autoRefreshInterval = null;
+                document.getElementById('autoRefreshBtn').textContent = 'Auto-refresh';
             } else {
                 autoRefreshInterval = setInterval(refreshMessages, 5000);
+                document.getElementById('autoRefreshBtn').textContent = 'Stop Auto-refresh';
+            }
+        }
+        
+        function toggleMessageExpansion(element) {
+            const hint = element.querySelector('.message-expand-hint');
+            if (element.classList.contains('expanded')) {
+                element.classList.remove('expanded');
+                hint.textContent = 'Click to expand';
+            } else {
+                element.classList.add('expanded');
+                hint.textContent = 'Click to collapse';
+            }
+        }
+        
+        function displayFilteredMessages() {
+            const messagesList = document.getElementById('messagesList');
+            
+            if (filteredMessages.length > 0) {
+                let html = '';
+                filteredMessages.forEach(msg => {
+                    const isSelected = selectedMessages.has(msg.id);
+                    html += `
+                        <div class="message-card">
+                            <div class="message-header">
+                                <div style="display: flex; align-items: center;">
+                                    ${isDLQ ? `<input type="checkbox" class="message-checkbox" ${isSelected ? 'checked' : ''} onchange="toggleMessageSelection('${msg.id}')" />` : ''}
+                                    <div class="message-id">${msg.id}</div>
+                                </div>
+                                <div class="message-timestamp">${new Date(msg.sentTimestamp).toLocaleString()}</div>
+                            </div>
+                            <div class="message-body" onclick="toggleMessageExpansion(this)">${formatJSON(msg.body)}
+                                <div class="message-expand-hint">Click to expand</div>
+                            </div>
+                            <div class="message-actions">
+                                <span class="badge badge-info">Count: ${msg.receiveCount}</span>
+                                <div class="message-action-buttons">
+                                    ${isDLQ ? `<button class="btn btn-sm" onclick="redriveMessage('${msg.id}')">Redrive</button>` : ''}
+                                    <button class="btn btn-danger btn-sm" onclick="deleteMessage('${msg.id}')">Delete</button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                messagesList.innerHTML = html;
+                
+                // Show/hide bulk actions for DLQ
+                if (isDLQ) {
+                    updateBulkActionsVisibility();
+                }
+            } else if (allMessages.length > 0) {
+                messagesList.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">Search</div>
+                        <h3>No messages match your search</h3>
+                        <p>Try adjusting your search terms</p>
+                    </div>
+                `;
+            } else {
+                messagesList.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">Empty</div>
+                        <h3>No messages found</h3>
+                        <p>This queue is currently empty</p>
+                    </div>
+                `;
             }
         }
 

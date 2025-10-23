@@ -323,10 +323,10 @@
             border: 1px solid rgba(139, 92, 246, 0.3);
         }
 
-        .badge-standard {
-            background: rgba(0, 212, 255, 0.2);
-            color: var(--accent-blue);
-            border: 1px solid rgba(0, 212, 255, 0.3);
+        .badge-dlq {
+            background: rgba(255, 51, 102, 0.2);
+            color: var(--accent-red);
+            border: 1px solid rgba(255, 51, 102, 0.3);
         }
 
         .queue-actions {
@@ -724,6 +724,11 @@
             <div class="section">
                 <div class="section-header">
                     <div class="section-title">Message Queues</div>
+                    <div style="margin-left: auto;">
+                        <input type="text" id="queueSearch" class="form-input" placeholder="Search queues..." 
+                               style="width: 200px; padding: 6px 10px; font-size: 12px; margin: 0;" 
+                               onkeyup="filterQueues()" />
+                    </div>
                 </div>
                 <div class="section-content">
                     <div class="queue-grid" id="queueList">
@@ -944,7 +949,7 @@
                 document.getElementById('totalQueues').textContent = currentQueues.length;
 
                 updateQueueSelects();
-                displayQueues();
+                displayQueues(currentQueues);
 
             } catch (error) {
                 console.error('Failed to load queues:', error);
@@ -958,18 +963,30 @@
             }
         }
 
-        function displayQueues() {
+        function displayQueues(queuesToDisplay = currentQueues) {
             const queueList = document.getElementById('queueList');
-            if (currentQueues.length > 0) {
-                queueList.innerHTML = currentQueues.map(queue => {
+            if (queuesToDisplay.length > 0) {
+                queueList.innerHTML = queuesToDisplay.map(queue => {
                     const isFifo = queue.name.endsWith('.fifo');
+                    const isDLQ = queue.name.toLowerCase().includes('dlq') || queue.name.toLowerCase().includes('deadletter');
+                    let badgeClass = 'badge-standard';
+                    let badgeText = 'Standard';
+                    
+                    if (isDLQ) {
+                        badgeClass = 'badge-dlq';
+                        badgeText = 'DLQ';
+                    } else if (isFifo) {
+                        badgeClass = 'badge-fifo';
+                        badgeText = 'FIFO';
+                    }
+                    
                     return `
                         <div class="queue-card">
                             <div class="queue-header">
                                 <div class="queue-name clickable" onclick="window.location.href='/queue/${queue.name}'">
                                      ${queue.name}
-                                     <span class="queue-type-badge ${isFifo ? 'badge-fifo' : 'badge-standard'}">
-                                         ${isFifo ? 'FIFO' : 'Standard'}
+                                     <span class="queue-type-badge ${badgeClass}">
+                                         ${badgeText}
                                      </span>
                                  </div>
                                 <div class="queue-actions">
@@ -1395,7 +1412,20 @@
                                 ${key.active ?
                                     `<button class="btn btn-secondary btn-sm" onclick="deactivateAccessKey('${key.accessKeyId}')">Deactivate</button>` :
                                     ''
-                                }
+        }
+
+        function filterQueues() {
+            const searchTerm = document.getElementById('queueSearch').value.toLowerCase();
+            
+            if (searchTerm === '') {
+                displayQueues(currentQueues);
+            } else {
+                const filteredQueues = currentQueues.filter(queue => 
+                    queue.name.toLowerCase().includes(searchTerm)
+                );
+                displayQueues(filteredQueues);
+            }
+        }
                                 <button class="btn btn-danger btn-sm" onclick="deleteAccessKey('${key.accessKeyId}')">Delete</button>
                             </div>
                         </div>
