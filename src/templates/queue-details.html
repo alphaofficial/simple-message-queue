@@ -475,6 +475,9 @@
                 <span class="queue-type-badge badge-standard" id="queueTypeBadge">Standard</span>
             </div>
             <div class="queue-actions">
+                <button class="btn" onclick="document.getElementById('messageBody').focus(); document.getElementById('messageBody').scrollIntoView({ behavior: 'smooth' });">
+                    Send Message
+                </button>
                 <button class="btn btn-secondary" onclick="pollMessages()">
                     Poll Messages
                 </button>
@@ -497,6 +500,38 @@
                 <div class="metric-title">Messages In Flight</div>
                 <div class="metric-value" id="messagesInFlight">-</div>
                 <div class="metric-subtitle">Currently being processed</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-header">
+                <div class="section-title">Send Message</div>
+            </div>
+            <div class="section-content">
+                <form class="send-message-form" onsubmit="sendMessage(event)">
+                    <div id="fifoMessageFields" style="display: none;">
+                        <div style="display: flex; gap: 16px; margin-bottom: 16px;">
+                            <div style="flex: 1;">
+                                <label style="display: block; margin-bottom: 6px; font-size: 12px; color: var(--text-secondary); font-weight: 500;">Message Group ID *</label>
+                                <input id="messageGroupId" style="width: 100%; padding: 8px 12px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 5px; color: var(--text-primary); font-size: 13px;" type="text" placeholder="group-1">
+                            </div>
+                            <div style="flex: 1;">
+                                <label style="display: block; margin-bottom: 6px; font-size: 12px; color: var(--text-secondary); font-weight: 500;">Deduplication ID</label>
+                                <input id="messageDeduplicationId" style="width: 100%; padding: 8px 12px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 5px; color: var(--text-primary); font-size: 13px;" type="text" placeholder="Optional - auto-generated">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: block; margin-bottom: 6px; font-size: 12px; color: var(--text-secondary); font-weight: 500;">Message Body (JSON)</label>
+                        <textarea id="messageBody" style="width: 100%; min-height: 120px; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 5px; color: var(--text-primary); font-size: 13px; font-family: 'Google Sans Code', monospace; resize: vertical;"
+                            placeholder='{"message": "Hello World", "timestamp": "2024-01-01T00:00:00Z"}'
+                            required></textarea>
+                    </div>
+                    <button type="submit" class="btn">
+                        Send Message
+                    </button>
+                </form>
             </div>
         </div>
 
@@ -565,6 +600,8 @@
             } else if (currentQueueName.endsWith('.fifo')) {
                 document.getElementById('queueTypeBadge').textContent = 'FIFO';
                 document.getElementById('queueTypeBadge').className = 'queue-type-badge badge-fifo';
+                // Show FIFO fields for message sending
+                document.getElementById('fifoMessageFields').style.display = 'block';
             }
 
             loadQueueDetails();
@@ -877,6 +914,53 @@
                         <p>This queue is currently empty</p>
                     </div>
                 `;
+            }
+        }
+
+        async function sendMessage(event) {
+            event.preventDefault();
+
+            const messageBody = document.getElementById('messageBody').value;
+            const messageGroupId = document.getElementById('messageGroupId').value;
+            const messageDeduplicationId = document.getElementById('messageDeduplicationId').value;
+
+            try {
+                const payload = {
+                    queueName: currentQueueName,
+                    messageBody: messageBody
+                };
+
+                if (currentQueueName.endsWith('.fifo')) {
+                    if (!messageGroupId) {
+                        alert('Message Group ID is required for FIFO queues');
+                        return;
+                    }
+                    payload.messageGroupId = messageGroupId;
+                    if (messageDeduplicationId) {
+                        payload.messageDeduplicationId = messageDeduplicationId;
+                    }
+                }
+
+                const response = await fetch('/api/messages/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById('messageBody').value = '';
+                    document.getElementById('messageGroupId').value = '';
+                    document.getElementById('messageDeduplicationId').value = '';
+                    refreshMessages();
+                    loadQueueDetails();
+                    alert('Message sent successfully!');
+                } else {
+                    alert('Failed to send message: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Failed to send message:', error);
+                alert('Failed to send message');
             }
         }
 
