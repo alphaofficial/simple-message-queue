@@ -21,14 +21,11 @@ import (
 	storage "simple-message-queue/src/storage"
 )
 
-// calculateMD5OfMessageAttributes calculates the MD5 hash of message attributes
-// according to the AWS SQS specification
 func calculateMD5OfMessageAttributes(attrs map[string]storage.MessageAttribute) string {
 	if len(attrs) == 0 {
 		return ""
 	}
 
-	// Sort attribute names
 	names := make([]string, 0, len(attrs))
 	for name := range attrs {
 		names = append(names, name)
@@ -41,33 +38,27 @@ func calculateMD5OfMessageAttributes(attrs map[string]storage.MessageAttribute) 
 	for _, name := range names {
 		attr := attrs[name]
 
-		// Encode name: length (4 bytes) + UTF-8 bytes
 		nameBytes := []byte(name)
 		nameLenBytes := make([]byte, 4)
 		binary.BigEndian.PutUint32(nameLenBytes, uint32(len(nameBytes)))
 		buffer = append(buffer, nameLenBytes...)
 		buffer = append(buffer, nameBytes...)
 
-		// Encode data type: length (4 bytes) + UTF-8 bytes
 		dataTypeBytes := []byte(attr.DataType)
 		dataTypeLenBytes := make([]byte, 4)
 		binary.BigEndian.PutUint32(dataTypeLenBytes, uint32(len(dataTypeBytes)))
 		buffer = append(buffer, dataTypeLenBytes...)
 		buffer = append(buffer, dataTypeBytes...)
 
-		// Encode transport type (1 byte)
-		// String and Number logical types use String transport (1)
-		// Binary logical type uses Binary transport (2)
 		if strings.HasPrefix(attr.DataType, "Binary") {
-			buffer = append(buffer, 2) // Binary transport
+			buffer = append(buffer, 2)
 			// For binary, encode the raw bytes
 			valueLenBytes := make([]byte, 4)
 			binary.BigEndian.PutUint32(valueLenBytes, uint32(len(attr.BinaryValue)))
 			buffer = append(buffer, valueLenBytes...)
 			buffer = append(buffer, attr.BinaryValue...)
 		} else {
-			buffer = append(buffer, 1) // String transport (for String and Number)
-			// For string, encode the UTF-8 bytes
+			buffer = append(buffer, 1)
 			valueBytes := []byte(attr.StringValue)
 			valueLenBytes := make([]byte, 4)
 			binary.BigEndian.PutUint32(valueLenBytes, uint32(len(valueBytes)))
@@ -76,7 +67,6 @@ func calculateMD5OfMessageAttributes(attrs map[string]storage.MessageAttribute) 
 		}
 	}
 
-	// Calculate MD5
 	hash := md5.Sum(buffer)
 	return hex.EncodeToString(hash[:])
 }
@@ -104,7 +94,6 @@ func (h *SMQHandler) handleCreateQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse attributes
 	attributes := make(map[string]string)
 	for key, values := range r.Form {
 		if strings.HasPrefix(key, "Attribute.") && strings.HasSuffix(key, ".Name") {
@@ -119,7 +108,6 @@ func (h *SMQHandler) handleCreateQueue(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Create queue object
 	queue := &storage.Queue{
 		Name:                          queueName,
 		URL:                           fmt.Sprintf("%s/%s", h.baseURL, queueName),
@@ -132,7 +120,6 @@ func (h *SMQHandler) handleCreateQueue(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:                     time.Now(),
 	}
 
-	// Parse standard attributes
 	if val, ok := attributes["VisibilityTimeout"]; ok {
 		if timeout, err := strconv.Atoi(val); err == nil {
 			queue.VisibilityTimeoutSeconds = timeout
@@ -157,7 +144,6 @@ func (h *SMQHandler) handleCreateQueue(w http.ResponseWriter, r *http.Request) {
 		queue.RedrivePolicy = val
 	}
 
-	// Parse FIFO-specific attributes
 	if val, ok := attributes["ContentBasedDeduplication"]; ok {
 		queue.ContentBasedDeduplication = (val == "true")
 	}
@@ -168,7 +154,6 @@ func (h *SMQHandler) handleCreateQueue(w http.ResponseWriter, r *http.Request) {
 		queue.FifoThroughputLimit = val
 	}
 
-	// Setup FIFO queue configuration
 	if err := SetupFifoQueue(queue); err != nil {
 		h.writeErrorResponse(w, "InvalidParameterValue", err.Error(), http.StatusBadRequest)
 		return
@@ -260,14 +245,12 @@ func (h *SMQHandler) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get queue to check max receive count for DLQ
 	queue, err := h.storage.GetQueue(r.Context(), queueName)
 	if err != nil || queue == nil {
 		h.writeErrorResponse(w, "QueueDoesNotExist", "Queue does not exist", http.StatusBadRequest)
 		return
 	}
 
-	// Create message
 	message := &storage.Message{
 		ID:                uuid.New().String(),
 		QueueName:         queueName,
@@ -281,18 +264,15 @@ func (h *SMQHandler) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		DelaySeconds:      0,
 	}
 
-	// Calculate MD5
 	hash := md5.Sum([]byte(messageBody))
 	message.MD5OfBody = hex.EncodeToString(hash[:])
 
-	// Parse delay seconds
 	if delayStr := r.FormValue("DelaySeconds"); delayStr != "" {
 		if delay, err := strconv.Atoi(delayStr); err == nil {
 			message.DelaySeconds = delay
 		}
 	}
 
-	// Parse message attributes
 	for key, values := range r.Form {
 		if strings.HasPrefix(key, "MessageAttribute.") && strings.HasSuffix(key, ".Name") {
 			attrIndex := strings.TrimPrefix(key, "MessageAttribute.")
@@ -313,27 +293,22 @@ func (h *SMQHandler) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 			message.MessageAttributes[attrName] = attr
 		}
 
-		// Calculate MD5 of message attributes
 		message.MD5OfAttributes = calculateMD5OfMessageAttributes(message.MessageAttributes)
 	}
 
-	// Handle FIFO queue parameters
 	message.MessageGroupId = r.FormValue("MessageGroupId")
 	message.MessageDeduplicationId = r.FormValue("MessageDeduplicationId")
 
-	// Validate FIFO message requirements
 	if err := ValidateFifoMessage(message, queue); err != nil {
 		h.writeErrorResponse(w, "InvalidParameterValue", err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	// Prepare FIFO message (sequence numbers, deduplication, etc.)
 	if err := PrepareFifoMessage(message, queue); err != nil {
 		h.writeErrorResponse(w, "InternalError", err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Check for duplicate message (FIFO queues only)
 	if queue.FifoQueue && message.DeduplicationHash != "" {
 		isDuplicate, err := CheckForDuplicateMessage(r.Context(), h.storage, queueName, message.DeduplicationHash)
 		if err != nil {
@@ -342,8 +317,6 @@ func (h *SMQHandler) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if isDuplicate {
-			// AWS returns success but doesn't actually send the message for duplicates
-			// We still return the response as if the message was sent
 			h.writeXMLResponse(w, SendMessageResponse{
 				MessageId:              message.ID,
 				MD5OfBody:              message.MD5OfBody,
@@ -397,7 +370,6 @@ func (h *SMQHandler) handleReceiveMessage(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	// Parse VisibilityTimeout parameter
 	visibilityTimeout := 0 // 0 means use queue default
 	if visStr := r.FormValue("VisibilityTimeout"); visStr != "" {
 		if vis, err := strconv.Atoi(visStr); err == nil && vis >= 0 && vis <= 43200 { // AWS max is 12 hours
@@ -504,7 +476,6 @@ func (h *SMQHandler) handleGetQueueAttributes(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Parse requested attributes (AttributeName.1, AttributeName.2, etc.)
 	var requestedAttributes []string
 	attributeIndex := 1
 	for {
@@ -517,7 +488,6 @@ func (h *SMQHandler) handleGetQueueAttributes(w http.ResponseWriter, r *http.Req
 		attributeIndex++
 	}
 
-	// If no specific attributes requested, default to "All"
 	if len(requestedAttributes) == 0 {
 		requestedAttributes = []string{"All"}
 	}
@@ -619,7 +589,6 @@ func (h *SMQHandler) generateQueueAttributes(ctx context.Context, queue *storage
 		})
 	}
 
-	// Live message count attributes
 	if shouldInclude("ApproximateNumberOfMessages") {
 		attributes = append(attributes, QueueAttribute{
 			Name:  "ApproximateNumberOfMessages",
@@ -794,11 +763,9 @@ func (h *SMQHandler) handleSendMessageBatch(w http.ResponseWriter, r *http.Reque
 	queueURL := r.FormValue("QueueUrl")
 	queueName := h.extractQueueNameFromURL(queueURL)
 
-	// Parse batch entries
 	var messages []*storage.Message
 	var entries []BatchEntry
 
-	// Parse entries from form data (Entry.1.Id, Entry.1.MessageBody, etc.)
 	entryIndex := 1
 	for {
 		idKey := fmt.Sprintf("Entry.%d.Id", entryIndex)

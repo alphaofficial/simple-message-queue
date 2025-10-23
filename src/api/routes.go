@@ -9,7 +9,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// SetupRoutes configures all routes for the Gin router
 func (h *SMQHandler) SetupRoutes(router *gin.Engine) {
 	// Set Gin to release mode for production
 	gin.SetMode(gin.ReleaseMode)
@@ -48,7 +47,7 @@ func (h *SMQHandler) SetupRoutes(router *gin.Engine) {
 		api.DELETE("/auth/access-keys/:id", func(c *gin.Context) { h.requireAuth(h.handleDeleteAccessKey)(c.Writer, c.Request) })
 	}
 
-	// SQS protocol endpoint (form-encoded and JSON) - with authentication
+	// SQS protocol endpoint (form-encoded and JSON)
 	router.POST("/", func(c *gin.Context) {
 		h.authenticateRequest(func(w http.ResponseWriter, r *http.Request) {
 			h.ginHandleSQSProtocol(c)
@@ -56,9 +55,7 @@ func (h *SMQHandler) SetupRoutes(router *gin.Engine) {
 	})
 }
 
-// setupMiddleware configures Gin middleware
 func (h *SMQHandler) setupMiddleware(router *gin.Engine) {
-	// CORS middleware
 	router.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"*"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
@@ -67,18 +64,14 @@ func (h *SMQHandler) setupMiddleware(router *gin.Engine) {
 		AllowCredentials: true,
 	}))
 
-	// Custom request logging
 	router.Use(gin.LoggerWithFormatter(func(param gin.LogFormatterParams) string {
 		return fmt.Sprintf("DEBUG: %s %s\n", param.Method, param.Path)
 	}))
 
-	// Recovery middleware
 	router.Use(gin.Recovery())
 }
 
-// ginHandleSQSProtocol handles all SQS protocol requests (form-encoded and JSON)
 func (h *SMQHandler) ginHandleSQSProtocol(c *gin.Context) {
-	// Detect protocol based on Content-Type
 	contentType := c.GetHeader("Content-Type")
 	isJSONProtocol := strings.Contains(contentType, "application/x-amz-json-1.0")
 
@@ -87,7 +80,6 @@ func (h *SMQHandler) ginHandleSQSProtocol(c *gin.Context) {
 		return
 	}
 
-	// Handle traditional form-encoded SQS requests
 	if err := c.Request.ParseForm(); err != nil {
 		h.writeErrorResponse(c.Writer, "InvalidRequest", "Failed to parse form data", http.StatusBadRequest)
 		return
@@ -129,88 +121,6 @@ func (h *SMQHandler) ginHandleSQSProtocol(c *gin.Context) {
 	}
 }
 
-// Legacy method for backwards compatibility - will be removed
-func (h *SMQHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	fmt.Printf("WARNING: ServeHTTP called - this should not happen with Gin router\n")
-	fmt.Printf("DEBUG: %s %s\n", r.Method, r.URL.Path)
-
-	// Handle health check
-	if r.Method == http.MethodGet && r.URL.Path == "/health" {
-		h.handleHealthCheck(w, r)
-		return
-	}
-
-	// Handle dashboard requests
-	if r.Method == http.MethodGet && r.URL.Path == "/" {
-		h.handleDashboard(w, r)
-		return
-	}
-
-	// API endpoints for dashboard
-	if strings.HasPrefix(r.URL.Path, "/api/") {
-		fmt.Printf("DEBUG: Routing to API handler\n")
-		h.handleAPIRoutes(w, r)
-		return
-	}
-
-	// SQS API endpoints (both JSON and XML protocols)
-	if r.Method != http.MethodPost {
-		h.writeErrorResponse(w, "InvalidAction", "Only POST method is supported", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Detect protocol based on Content-Type
-	contentType := r.Header.Get("Content-Type")
-	isJSONProtocol := strings.Contains(contentType, "application/x-amz-json-1.0")
-
-	if isJSONProtocol {
-		h.handleJSONRequest(w, r)
-		return
-	}
-
-	// Handle traditional form-encoded SQS requests
-	if err := r.ParseForm(); err != nil {
-		h.writeErrorResponse(w, "InvalidRequest", "Failed to parse form data", http.StatusBadRequest)
-		return
-	}
-
-	action := r.FormValue("Action")
-
-	switch action {
-	case "CreateQueue":
-		h.handleCreateQueue(w, r)
-	case "DeleteQueue":
-		h.handleDeleteQueue(w, r)
-	case "ListQueues":
-		h.handleListQueues(w, r)
-	case "GetQueueUrl":
-		h.handleGetQueueUrl(w, r)
-	case "SendMessage":
-		h.handleSendMessage(w, r)
-	case "SendMessageBatch":
-		h.handleSendMessageBatch(w, r)
-	case "ReceiveMessage":
-		h.handleReceiveMessage(w, r)
-	case "DeleteMessage":
-		h.handleDeleteMessage(w, r)
-	case "DeleteMessageBatch":
-		h.handleDeleteMessageBatch(w, r)
-	case "ChangeMessageVisibility":
-		h.handleChangeMessageVisibility(w, r)
-	case "ChangeMessageVisibilityBatch":
-		h.handleChangeMessageVisibilityBatch(w, r)
-	case "GetQueueAttributes":
-		h.handleGetQueueAttributes(w, r)
-	case "SetQueueAttributes":
-		h.handleSetQueueAttributes(w, r)
-	case "PurgeQueue":
-		h.handlePurgeQueue(w, r)
-	default:
-		h.writeErrorResponse(w, "InvalidAction", fmt.Sprintf("Unknown action: %s", action), http.StatusBadRequest)
-	}
-}
-
-// handleJSONRequest routes JSON protocol requests to appropriate handlers
 func (h *SMQHandler) handleJSONRequest(w http.ResponseWriter, r *http.Request) {
 	// Extract action from x-amz-target header (case-insensitive)
 	target := r.Header.Get("X-Amz-Target")
@@ -262,72 +172,5 @@ func (h *SMQHandler) handleJSONRequest(w http.ResponseWriter, r *http.Request) {
 		h.handleJSONPurgeQueue(w, r)
 	default:
 		h.writeJSONErrorResponse(w, "InvalidAction", fmt.Sprintf("Unsupported action: %s", action), http.StatusBadRequest)
-	}
-}
-
-// handleAPIRoutes handles dashboard API routes
-func (h *SMQHandler) handleAPIRoutes(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-
-	if r.Method == http.MethodOptions {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	switch r.URL.Path {
-	case "/api/status":
-		if r.Method == http.MethodGet {
-			h.handleAPIStatus(w, r)
-		} else {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	case "/api/queues":
-		if r.Method == http.MethodGet {
-			h.handleAPIListQueues(w, r)
-		} else if r.Method == http.MethodPost {
-			h.handleAPICreateQueue(w, r)
-		} else {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	case "/api/messages":
-		if r.Method == http.MethodPost {
-			h.handleAPISendMessage(w, r)
-		} else {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	case "/api/messages/poll":
-		if r.Method == http.MethodPost {
-			h.handleAPIPollMessages(w, r)
-		} else {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	case "/api/messages/send":
-		if r.Method == http.MethodPost {
-			h.handleAPISendMessage(w, r)
-		} else {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	default:
-		if strings.HasPrefix(r.URL.Path, "/api/queues/") {
-			if strings.HasSuffix(r.URL.Path, "/messages") {
-				if r.Method == http.MethodGet {
-					h.handleAPIGetQueueMessages(w, r)
-				} else {
-					http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-				}
-			} else {
-				// Handle individual queue operations like DELETE /api/queues/{name}
-				if r.Method == http.MethodDelete {
-					h.handleAPIDeleteQueue(w, r)
-				} else {
-					http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-				}
-			}
-		} else {
-			http.Error(w, "Not found", http.StatusNotFound)
-		}
 	}
 }

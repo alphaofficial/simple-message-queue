@@ -53,10 +53,8 @@ func main() {
 
 	defer storageInstance.Close()
 
-	// Initialize SMQ handler
 	smqHandler := api.NewSMQHandler(storageInstance, cfg.BaseURL, cfg.AdminUsername, cfg.AdminPassword)
 
-	// Setup Gin router
 	router := gin.New()
 	smqHandler.SetupRoutes(router)
 
@@ -79,7 +77,7 @@ func main() {
 	// Start background DLQ processor
 	go startDLQProcessor(storageInstance)
 
-	// Wait for interrupt signal
+	// Listen for interrupt signal
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	<-c
@@ -111,7 +109,6 @@ func startDLQProcessor(storageInstance storage.Storage) {
 		}
 
 		for _, message := range expiredMessages {
-			// Get queue to find DLQ name
 			queue, err := storageInstance.GetQueue(ctx, message.QueueName)
 			if err != nil || queue == nil {
 				continue
