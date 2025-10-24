@@ -276,7 +276,7 @@ func (s *PostgreSQLStorage) ListQueues(ctx context.Context, prefix string) ([]*s
 }
 
 func (s *PostgreSQLStorage) DeleteQueue(ctx context.Context, queueName string) error {
-	// Begin transaction for cascade deletion
+	// Begin transaction for deletion
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
@@ -291,15 +291,29 @@ func (s *PostgreSQLStorage) DeleteQueue(ctx context.Context, queueName string) e
 		return fmt.Errorf("failed to get DLQ for queue %s: %w", queueName, err)
 	}
 
-	// Delete the main queue (this will cascade delete its messages due to FK constraint)
+	// Explicitly delete all messages for this queue first
+	deleteMessagesQuery := fmt.Sprintf(`DELETE FROM %s.messages WHERE queue_name = $1`, pq.QuoteIdentifier(s.schema))
+	_, err = tx.ExecContext(ctx, deleteMessagesQuery, queueName)
+	if err != nil {
+		return fmt.Errorf("failed to delete messages for queue %s: %w", queueName, err)
+	}
+
+	// Delete the main queue
 	deleteQuery := fmt.Sprintf(`DELETE FROM %s.queues WHERE name = $1`, pq.QuoteIdentifier(s.schema))
 	_, err = tx.ExecContext(ctx, deleteQuery, queueName)
 	if err != nil {
 		return fmt.Errorf("failed to delete queue %s: %w", queueName, err)
 	}
 
-	// If the queue had a DLQ, delete it as well
+	// If the queue had a DLQ, delete its messages and the queue as well
 	if dlqName.Valid && dlqName.String != "" {
+		// Delete DLQ messages
+		_, err = tx.ExecContext(ctx, deleteMessagesQuery, dlqName.String)
+		if err != nil {
+			// Continue even if DLQ messages can't be deleted
+		}
+
+		// Delete DLQ
 		dlqDeleteQuery := fmt.Sprintf(`DELETE FROM %s.queues WHERE name = $1`, pq.QuoteIdentifier(s.schema))
 		_, err = tx.ExecContext(ctx, dlqDeleteQuery, dlqName.String)
 		if err != nil {

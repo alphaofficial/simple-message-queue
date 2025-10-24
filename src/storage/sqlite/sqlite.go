@@ -22,8 +22,8 @@ type SQLiteStorage struct {
 }
 
 func NewSQLiteStorage(dbPath string) (*SQLiteStorage, error) {
-	// Use WAL mode for better concurrency
-	db, err := sql.Open("sqlite3", dbPath+"?_journal=WAL&_timeout=5000&_synchronous=NORMAL")
+	// Use WAL mode for better concurrency and enable foreign keys
+	db, err := sql.Open("sqlite3", dbPath+"?_journal=WAL&_timeout=5000&_synchronous=NORMAL&_foreign_keys=ON")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite database: %w", err)
 	}
@@ -33,6 +33,12 @@ func NewSQLiteStorage(dbPath string) (*SQLiteStorage, error) {
 	db.SetMaxIdleConns(1)
 
 	s := &SQLiteStorage{db: db}
+
+	// Also enable foreign keys explicitly for existing connections
+	if _, err := s.db.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		return nil, fmt.Errorf("failed to enable foreign key constraints: %w", err)
+	}
+
 	if err := s.createTables(); err != nil {
 		return nil, fmt.Errorf("failed to create tables: %w", err)
 	}
@@ -41,6 +47,11 @@ func NewSQLiteStorage(dbPath string) (*SQLiteStorage, error) {
 }
 
 func (s *SQLiteStorage) createTables() error {
+	// Enable foreign key constraints (SQLite has them disabled by default)
+	if _, err := s.db.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		return fmt.Errorf("failed to enable foreign key constraints: %w", err)
+	}
+
 	queries := []string{
 		`CREATE TABLE IF NOT EXISTS queues (
 			name TEXT PRIMARY KEY,
@@ -149,7 +160,7 @@ func (s *SQLiteStorage) CheckForDuplicate(ctx context.Context, queueName, dedupl
 }
 
 func (s *SQLiteStorage) DeleteQueue(ctx context.Context, queueName string) error {
-	// Begin transaction for cascade deletion
+	// Begin transaction for deletion
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
@@ -163,14 +174,15 @@ func (s *SQLiteStorage) DeleteQueue(ctx context.Context, queueName string) error
 		return fmt.Errorf("failed to get DLQ for queue %s: %w", queueName, err)
 	}
 
-	// Delete the main queue (this will cascade delete its messages due to FK constraint)
+	// Delete the main queue (CASCADE will automatically delete messages)
 	_, err = tx.ExecContext(ctx, "DELETE FROM queues WHERE name = ?", queueName)
 	if err != nil {
 		return fmt.Errorf("failed to delete queue %s: %w", queueName, err)
 	}
 
-	// If the queue had a DLQ, delete it as well
+	// If the queue had a DLQ, delete it as well (CASCADE will handle its messages)
 	if dlqName.Valid && dlqName.String != "" {
+		// Delete DLQ (CASCADE will automatically delete its messages)
 		_, err = tx.ExecContext(ctx, "DELETE FROM queues WHERE name = ?", dlqName.String)
 		if err != nil {
 			// Don't fail if DLQ doesn't exist or is already deleted
