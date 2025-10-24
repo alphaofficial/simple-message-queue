@@ -94,7 +94,7 @@ func TestReceiveMessageVisibilityTimeout(t *testing.T) {
 
 			// Execute request
 			w := httptest.NewRecorder()
-			handler.ServeHTTP(w, req)
+			callSQSHandler(handler, w, req)
 
 			// Verify request was successful
 			if w.Code != http.StatusOK {
@@ -173,7 +173,7 @@ func TestReceiveMessageVisibilityTimeoutValidation(t *testing.T) {
 
 			// Execute request
 			w := httptest.NewRecorder()
-			handler.ServeHTTP(w, req)
+			callSQSHandler(handler, w, req)
 
 			// Verify request was successful (invalid values should not cause errors)
 			if w.Code != http.StatusOK {
@@ -233,7 +233,7 @@ func TestReceiveMessageParameterHandling(t *testing.T) {
 
 		// Execute request
 		w := httptest.NewRecorder()
-		handler.ServeHTTP(w, req)
+		callSQSHandler(handler, w, req)
 
 		// Verify request was successful
 		if w.Code != http.StatusOK {

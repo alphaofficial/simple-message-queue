@@ -15,6 +15,11 @@ import (
 	"simple-message-queue/src/storage"
 )
 
+// Helper function to simulate SQS protocol request routing
+func callSQSHandler(handler *api.SMQHandler, w http.ResponseWriter, r *http.Request) {
+	handler.HandleSQSRequest(w, r)
+}
+
 func TestSendMessageBatch(t *testing.T) {
 	// Setup
 	mockStorage := NewMockStorage()
@@ -102,9 +107,9 @@ func TestSendMessageBatch(t *testing.T) {
 			req := httptest.NewRequest("POST", "/", strings.NewReader(formData.Encode()))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-			// Execute request
+			// Execute request using test helper
 			w := httptest.NewRecorder()
-			handler.ServeHTTP(w, req)
+			callSQSHandler(handler, w, req)
 
 			// Verify response
 			if w.Code != http.StatusOK {
@@ -212,7 +217,7 @@ func TestDeleteMessageBatch(t *testing.T) {
 
 		// Execute request
 		w := httptest.NewRecorder()
-		handler.ServeHTTP(w, req)
+		callSQSHandler(handler, w, req)
 
 		// Verify response
 		if w.Code != http.StatusOK {
@@ -272,7 +277,7 @@ func TestChangeMessageVisibilityBatch(t *testing.T) {
 
 		// Execute request
 		w := httptest.NewRecorder()
-		handler.ServeHTTP(w, req)
+		callSQSHandler(handler, w, req)
 
 		// Verify response
 		if w.Code != http.StatusOK {
@@ -306,7 +311,7 @@ func TestChangeMessageVisibilityBatch(t *testing.T) {
 
 		// Execute request
 		w := httptest.NewRecorder()
-		handler.ServeHTTP(w, req)
+		callSQSHandler(handler, w, req)
 
 		// Should still succeed with valid entries
 		if w.Code != http.StatusOK {
@@ -338,7 +343,7 @@ func TestBatchOperationErrors(t *testing.T) {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 		w := httptest.NewRecorder()
-		handler.ServeHTTP(w, req)
+		callSQSHandler(handler, w, req)
 
 		// Should return error for empty batch
 		if w.Code != http.StatusBadRequest {
@@ -356,7 +361,7 @@ func TestBatchOperationErrors(t *testing.T) {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 		w := httptest.NewRecorder()
-		handler.ServeHTTP(w, req)
+		callSQSHandler(handler, w, req)
 
 		// Should return error for empty batch
 		if w.Code != http.StatusBadRequest {

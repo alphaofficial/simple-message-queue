@@ -90,7 +90,7 @@ func TestReceiveMessageVisibilityTimeoutFixed(t *testing.T) {
 
 			// Execute request
 			w := httptest.NewRecorder()
-			handler.ServeHTTP(w, req)
+			callSQSHandler(handler, w, req)
 
 			// Verify request was successful
 			if w.Code != http.StatusOK {
@@ -161,7 +161,7 @@ func TestReceiveMessageParameterHandlingFixed(t *testing.T) {
 
 		// Execute request
 		w := httptest.NewRecorder()
-		handler.ServeHTTP(w, req)
+		callSQSHandler(handler, w, req)
 
 		// Verify request was successful
 		if w.Code != http.StatusOK {

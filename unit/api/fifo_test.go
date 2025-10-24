@@ -82,7 +82,7 @@ func TestFifoQueueCreation(t *testing.T) {
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 			rr := httptest.NewRecorder()
-			handler.ServeHTTP(rr, req)
+			callSQSHandler(handler, rr, req)
 
 			if tt.expectErr {
 				if rr.Code == http.StatusOK {
@@ -182,7 +182,7 @@ func TestFifoMessageSending(t *testing.T) {
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 			rr := httptest.NewRecorder()
-			handler.ServeHTTP(rr, req)
+			callSQSHandler(handler, rr, req)
 
 			if tt.expectErr {
 				if rr.Code == http.StatusOK {
@@ -244,7 +244,7 @@ func TestFifoContentBasedDeduplication(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
+	callSQSHandler(handler, rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Errorf("First message should succeed: %s", rr.Body.String())
@@ -295,7 +295,7 @@ func TestFifoMessageOrdering(t *testing.T) {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 		rr := httptest.NewRecorder()
-		handler.ServeHTTP(rr, req)
+		callSQSHandler(handler, rr, req)
 
 		if rr.Code != http.StatusOK {
 			t.Errorf("Message %d should succeed: %s", i, rr.Body.String())
@@ -347,7 +347,7 @@ func TestFifoQueueAttributes(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
+	callSQSHandler(handler, rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Errorf("GetQueueAttributes should succeed: %s", rr.Body.String())

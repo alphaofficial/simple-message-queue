@@ -149,7 +149,7 @@ func TestGetQueueAttributes(t *testing.T) {
 
 			// Execute request
 			w := httptest.NewRecorder()
-			handler.ServeHTTP(w, req)
+			callSQSHandler(handler, w, req)
 
 			// Verify response
 			if w.Code != http.StatusOK {
@@ -204,7 +204,7 @@ func TestGetQueueAttributesErrors(t *testing.T) {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 		w := httptest.NewRecorder()
-		handler.ServeHTTP(w, req)
+		callSQSHandler(handler, w, req)
 
 		// Should return error for missing parameter
 		if w.Code != http.StatusBadRequest {
@@ -226,7 +226,7 @@ func TestGetQueueAttributesErrors(t *testing.T) {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 		w := httptest.NewRecorder()
-		handler.ServeHTTP(w, req)
+		callSQSHandler(handler, w, req)
 
 		// Should return error for nonexistent queue
 		if w.Code != http.StatusBadRequest {
@@ -318,7 +318,7 @@ func TestGetQueueAttributesMessageCounting(t *testing.T) {
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 			w := httptest.NewRecorder()
-			handler.ServeHTTP(w, req)
+			callSQSHandler(handler, w, req)
 
 			if w.Code != http.StatusOK {
 				t.Fatalf("Expected status %d, got %d. Body: %s", http.StatusOK, w.Code, w.Body.String())

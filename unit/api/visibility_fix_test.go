@@ -62,7 +62,7 @@ func TestVisibilityTimeoutSimple(t *testing.T) {
 
 	// Execute request
 	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
+	callSQSHandler(handler, w, req)
 
 	t.Logf("Response Status: %d", w.Code)
 	t.Logf("Response Body: %s", w.Body.String())
@@ -136,7 +136,7 @@ func TestReceiveMessageDebug(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
+	callSQSHandler(handler, w, req)
 
 	t.Logf("HTTP Response: %d", w.Code)
 	t.Logf("HTTP Body: %s", w.Body.String())
