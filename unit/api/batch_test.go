@@ -11,13 +11,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"simple-message-queue/src/api"
 	"simple-message-queue/src/storage"
 )
 
 // Helper function to simulate SQS protocol request routing
 func callSQSHandler(handler *api.SMQHandler, w http.ResponseWriter, r *http.Request) {
-	handler.HandleSQSRequest(w, r)
+	// Create a test router and use the actual routing
+	router := gin.New()
+	handler.SetupRoutes(router)
+
+	// Serve the request through the router
+	router.ServeHTTP(w, r)
 }
 
 func TestSendMessageBatch(t *testing.T) {
