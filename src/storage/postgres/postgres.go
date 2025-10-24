@@ -283,51 +283,25 @@ func (s *PostgreSQLStorage) DeleteQueue(ctx context.Context, queueName string) e
 	}
 	defer tx.Rollback()
 
-	// First, get the DLQ name and RedrivePolicy if they exist
+	// First, get the DLQ name if it exists
 	var dlqName sql.NullString
-	var redrivePolicy sql.NullString
-	query := fmt.Sprintf(`SELECT dead_letter_queue_name, redrive_policy FROM %s.queues WHERE name = $1`, pq.QuoteIdentifier(s.schema))
-	err = tx.QueryRowContext(ctx, query, queueName).Scan(&dlqName, &redrivePolicy)
+	query := fmt.Sprintf(`SELECT dead_letter_queue_name FROM %s.queues WHERE name = $1`, pq.QuoteIdentifier(s.schema))
+	err = tx.QueryRowContext(ctx, query, queueName).Scan(&dlqName)
 	if err != nil && err != sql.ErrNoRows {
 		return fmt.Errorf("failed to get DLQ for queue %s: %w", queueName, err)
 	}
 
-	// Determine DLQ name - try direct field first, then parse from RedrivePolicy
-	var dlqToDelete string
-	if dlqName.Valid && dlqName.String != "" {
-		dlqToDelete = dlqName.String
-	} else if redrivePolicy.Valid && redrivePolicy.String != "" {
-		// Parse RedrivePolicy JSON to extract DLQ name
-		var policy struct {
-			DeadLetterTargetArn string `json:"deadLetterTargetArn"`
-		}
-		if err := json.Unmarshal([]byte(redrivePolicy.String), &policy); err == nil && policy.DeadLetterTargetArn != "" {
-			// Extract queue name from ARN (format: arn:aws:sqs:region:account:queuename)
-			parts := strings.Split(policy.DeadLetterTargetArn, ":")
-			if len(parts) >= 6 && parts[5] != "" {
-				dlqToDelete = parts[5]
-			}
-		}
-	}
-
 	// Delete the main queue (this will cascade delete its messages due to FK constraint)
-	result, err := tx.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s.queues WHERE name = $1`, pq.QuoteIdentifier(s.schema)), queueName)
+	deleteQuery := fmt.Sprintf(`DELETE FROM %s.queues WHERE name = $1`, pq.QuoteIdentifier(s.schema))
+	_, err = tx.ExecContext(ctx, deleteQuery, queueName)
 	if err != nil {
 		return fmt.Errorf("failed to delete queue %s: %w", queueName, err)
 	}
 
-	// Check if the main queue was actually deleted
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-	if rowsAffected == 0 {
-		return fmt.Errorf("queue %s not found", queueName)
-	}
-
 	// If the queue had a DLQ, delete it as well
-	if dlqToDelete != "" {
-		_, err = tx.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s.queues WHERE name = $1`, pq.QuoteIdentifier(s.schema)), dlqToDelete)
+	if dlqName.Valid && dlqName.String != "" {
+		dlqDeleteQuery := fmt.Sprintf(`DELETE FROM %s.queues WHERE name = $1`, pq.QuoteIdentifier(s.schema))
+		_, err = tx.ExecContext(ctx, dlqDeleteQuery, dlqName.String)
 		if err != nil {
 			// Don't fail if DLQ doesn't exist or is already deleted
 			// This could happen if the DLQ is shared between multiple queues

@@ -2240,6 +2240,35 @@ func (h *SMQHandler) handleJSONCreateQueue(w http.ResponseWriter, r *http.Reques
 				queue.MessageRetentionPeriod = period
 			}
 		}
+		if val, ok := req.Attributes["MaxReceiveCount"]; ok {
+			if count, err := strconv.Atoi(val); err == nil {
+				queue.MaxReceiveCount = count
+			}
+		}
+		if val, ok := req.Attributes["DeadLetterQueueName"]; ok {
+			queue.DeadLetterQueueName = val
+		}
+		if val, ok := req.Attributes["DelaySeconds"]; ok {
+			if delay, err := strconv.Atoi(val); err == nil {
+				queue.DelaySeconds = delay
+			}
+		}
+		if val, ok := req.Attributes["RedrivePolicy"]; ok {
+			queue.RedrivePolicy = val
+			// Parse RedrivePolicy JSON to extract DLQ settings
+			var redrivePolicy struct {
+				DeadLetterTargetArn string `json:"deadLetterTargetArn"`
+				MaxReceiveCount     int    `json:"maxReceiveCount"`
+			}
+			if err := json.Unmarshal([]byte(val), &redrivePolicy); err == nil {
+				// Extract queue name from ARN (format: arn:aws:sqs:region:account:queuename)
+				parts := strings.Split(redrivePolicy.DeadLetterTargetArn, ":")
+				if len(parts) >= 6 {
+					queue.DeadLetterQueueName = parts[5]
+				}
+				queue.MaxReceiveCount = redrivePolicy.MaxReceiveCount
+			}
+		}
 		if val, ok := req.Attributes["FifoQueue"]; ok {
 			queue.FifoQueue = (val == "true")
 		}

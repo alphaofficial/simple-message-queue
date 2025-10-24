@@ -187,3 +187,17 @@ func (m *MockStorage) DeleteAccessKey(ctx context.Context, accessKeyID string) e
 func (m *MockStorage) UpdateAccessKeyUsage(ctx context.Context, accessKeyID string) error {
 	return nil
 }
+
+// DLQ operations (mock implementations)
+func (m *MockStorage) RedriveMessage(ctx context.Context, dlqName string, messageId string, sourceQueueName string) error {
+	return nil
+}
+
+func (m *MockStorage) RedriveMessageBatch(ctx context.Context, dlqName string, messageIds []string, sourceQueueName string) error {
+	return nil
+}
+
+func (m *MockStorage) GetSourceQueueForDLQ(ctx context.Context, dlqName string) (string, error) {
+	// Mock implementation - return empty string if no source queue found
+	return "", nil
+}
