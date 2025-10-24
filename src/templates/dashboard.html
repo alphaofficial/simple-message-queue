@@ -1219,10 +1219,7 @@
 
                 if (enableDLQ && dlqName) {
                     attributes.MaxReceiveCount = maxReceiveCount;
-                    attributes.RedrivePolicy = JSON.stringify({
-                        deadLetterTargetArn: `arn:aws:sqs:us-east-1:123456789012:${dlqName}`,
-                        maxReceiveCount: parseInt(maxReceiveCount)
-                    });
+                    attributes.DeadLetterQueueName = dlqName;
                 }
 
                 if (isFifo) {

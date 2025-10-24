@@ -569,18 +569,23 @@ func (s *SQLiteStorage) ReceiveMessages(ctx context.Context, queueName string, m
 		}
 
 		// Check if message would exceed max receive count AFTER incrementing (use queue's max receive count)
-		if queueMaxReceiveCount > 0 && message.ReceiveCount+1 >= queueMaxReceiveCount {
+		if queueMaxReceiveCount > 0 && message.ReceiveCount+1 > queueMaxReceiveCount {
 			// Move message to DLQ immediately
 			if dlqName.Valid && dlqName.String != "" {
 				newReceiptHandle := uuid.New().String()
+
+				// Properly marshal attributes to JSON
+				attributesJSON, _ := json.Marshal(message.Attributes)
+				messageAttributesJSON, _ := json.Marshal(message.MessageAttributes)
+
 				_, err = tx.ExecContext(ctx, `
 					INSERT INTO messages (id, queue_name, body, attributes, message_attributes, receipt_handle,
 						receive_count, max_receive_count, visibility_timeout, created_at, delay_seconds,
 						md5_of_body, md5_of_attributes, message_group_id, message_deduplication_id, 
 						sequence_number, deduplication_hash)
 					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-					uuid.New().String(), dlqName.String, message.Body, message.Attributes,
-					message.MessageAttributes, newReceiptHandle, 0, queueMaxReceiveCount,
+					uuid.New().String(), dlqName.String, message.Body, string(attributesJSON),
+					string(messageAttributesJSON), newReceiptHandle, 0, queueMaxReceiveCount,
 					nil, message.CreatedAt, message.DelaySeconds, message.MD5OfBody,
 					message.MD5OfAttributes, message.MessageGroupId, message.MessageDeduplicationId,
 					message.SequenceNumber, message.DeduplicationHash,

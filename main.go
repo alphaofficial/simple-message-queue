@@ -16,6 +16,8 @@ import (
 	"simple-message-queue/src/storage/sqlite"
 
 	"github.com/gin-gonic/gin"
+
+	_ "github.com/joho/godotenv/autoload"
 )
 
 func main() {

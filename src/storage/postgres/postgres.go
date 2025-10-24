@@ -145,8 +145,8 @@ func (s *PostgreSQLStorage) CreateQueue(ctx context.Context, queue *storage.Queu
 
 	query := fmt.Sprintf(`
 		INSERT INTO %s.queues (
-			name, url, attributes, visibility_timeout_seconds, message_retention_period, 
-			max_receive_count, delay_seconds, receive_message_wait_time_seconds, 
+			name, url, attributes, visibility_timeout_seconds, message_retention_period,
+			max_receive_count, delay_seconds, receive_message_wait_time_seconds,
 			dead_letter_queue_name, redrive_policy, fifo_queue, content_based_deduplication,
 			deduplication_scope, fifo_throughput_limit
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
@@ -337,7 +337,7 @@ func (s *PostgreSQLStorage) ReceiveMessages(ctx context.Context, queueName strin
 			       receive_count, max_receive_count, visibility_timeout, created_at,
 			       delay_seconds, md5_of_body, md5_of_attributes,
 			       message_group_id, message_deduplication_id, sequence_number, deduplication_hash
-			FROM %s.messages 
+			FROM %s.messages
 			WHERE queue_name = $1 AND receive_count >= $2
 		`, pq.QuoteIdentifier(s.schema))
 
@@ -436,7 +436,7 @@ func (s *PostgreSQLStorage) ReceiveMessages(ctx context.Context, queueName strin
 			       receive_count, max_receive_count, visibility_timeout, created_at,
 			       delay_seconds, md5_of_body, md5_of_attributes,
 			       message_group_id, message_deduplication_id, sequence_number, deduplication_hash
-			FROM %s.messages 
+			FROM %s.messages
 			WHERE queue_name = $1 AND (visibility_timeout IS NULL OR visibility_timeout <= $2)
 			      AND (delay_seconds = 0 OR created_at + INTERVAL '1 second' * delay_seconds <= $2)
 			      AND ($3 = 0 OR receive_count < $3)
@@ -451,7 +451,7 @@ func (s *PostgreSQLStorage) ReceiveMessages(ctx context.Context, queueName strin
 			       receive_count, max_receive_count, visibility_timeout, created_at,
 			       delay_seconds, md5_of_body, md5_of_attributes,
 			       message_group_id, message_deduplication_id, sequence_number, deduplication_hash
-			FROM %s.messages 
+			FROM %s.messages
 			WHERE queue_name = $1 AND (visibility_timeout IS NULL OR visibility_timeout <= $2)
 			      AND (delay_seconds = 0 OR created_at + INTERVAL '1 second' * delay_seconds <= $2)
 			      AND ($3 = 0 OR receive_count < $3)
@@ -513,19 +513,24 @@ func (s *PostgreSQLStorage) ReceiveMessages(ctx context.Context, queueName strin
 		}
 
 		// Check if message would exceed max receive count AFTER incrementing (use queue's max receive count)
-		if queueMaxReceiveCount > 0 && message.ReceiveCount+1 >= queueMaxReceiveCount {
+		if queueMaxReceiveCount > 0 && message.ReceiveCount+1 > queueMaxReceiveCount {
 			// Move message to DLQ immediately
 			if dlqName.Valid && dlqName.String != "" {
 				newReceiptHandle := uuid.New().String()
+
+				// Properly marshal attributes to JSON
+				attributesJSON, _ := json.Marshal(message.Attributes)
+				messageAttributesJSON, _ := json.Marshal(message.MessageAttributes)
+
 				_, err = tx.ExecContext(ctx, fmt.Sprintf(`
 					INSERT INTO %s.messages (id, queue_name, body, attributes, message_attributes, receipt_handle,
 						receive_count, max_receive_count, visibility_timeout, created_at, delay_seconds,
-						md5_of_body, md5_of_attributes, message_group_id, message_deduplication_id, 
+						md5_of_body, md5_of_attributes, message_group_id, message_deduplication_id,
 						sequence_number, deduplication_hash)
 					VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
 					pq.QuoteIdentifier(s.schema)),
-					uuid.New().String(), dlqName.String, message.Body, message.Attributes,
-					message.MessageAttributes, newReceiptHandle, 0, queueMaxReceiveCount,
+					uuid.New().String(), dlqName.String, message.Body, string(attributesJSON),
+					string(messageAttributesJSON), newReceiptHandle, 0, queueMaxReceiveCount,
 					nil, message.CreatedAt, message.DelaySeconds, message.MD5OfBody,
 					message.MD5OfAttributes, message.MessageGroupId, message.MessageDeduplicationId,
 					message.SequenceNumber, message.DeduplicationHash,
@@ -615,8 +620,8 @@ func (s *PostgreSQLStorage) DeleteMessageBatch(ctx context.Context, queueName st
 func (s *PostgreSQLStorage) ChangeMessageVisibility(ctx context.Context, queueName, receiptHandle string, visibilityTimeout int) error {
 	newVisibilityTimeout := time.Now().Add(time.Duration(visibilityTimeout) * time.Second)
 	query := fmt.Sprintf(`
-		UPDATE %s.messages 
-		SET visibility_timeout = $1 
+		UPDATE %s.messages
+		SET visibility_timeout = $1
 		WHERE queue_name = $2 AND receipt_handle = $3
 	`, pq.QuoteIdentifier(s.schema))
 
@@ -740,7 +745,7 @@ func (s *PostgreSQLStorage) RedriveMessage(ctx context.Context, dlqName string, 
 		receive_count, max_receive_count, visibility_timeout, delay_seconds,
 		md5_of_body, md5_of_attributes, message_group_id, message_deduplication_id,
 		sequence_number, deduplication_hash, created_at
-		FROM %s.messages 
+		FROM %s.messages
 		WHERE id = $1 AND queue_name = $2`, pq.QuoteIdentifier(s.schema))
 
 	var message storage.Message
@@ -868,8 +873,8 @@ func (s *PostgreSQLStorage) ChangeMessageVisibilityBatch(ctx context.Context, qu
 
 	now := time.Now()
 	stmt, err := tx.PrepareContext(ctx, fmt.Sprintf(`
-		UPDATE %s.messages 
-		SET visibility_timeout = $1 
+		UPDATE %s.messages
+		SET visibility_timeout = $1
 		WHERE queue_name = $2 AND receipt_handle = $3
 	`, pq.QuoteIdentifier(s.schema)))
 	if err != nil {
@@ -1018,7 +1023,7 @@ func (s *PostgreSQLStorage) CheckForDuplicate(ctx context.Context, queueName, de
 	cutoffTime := time.Now().Add(-deduplicationWindow)
 
 	query := fmt.Sprintf(`
-		SELECT COUNT(*) FROM %s.messages 
+		SELECT COUNT(*) FROM %s.messages
 		WHERE queue_name = $1 AND deduplication_hash = $2 AND created_at > $3
 	`, pq.QuoteIdentifier(s.schema))
 
@@ -1107,7 +1112,7 @@ func (s *PostgreSQLStorage) CreateAccessKey(ctx context.Context, accessKey *stor
 }
 
 func (s *PostgreSQLStorage) GetAccessKey(ctx context.Context, accessKeyID string) (*storage.AccessKey, error) {
-	query := fmt.Sprintf(`SELECT access_key_id, secret_access_key, name, description, active, created_at, last_used_at 
+	query := fmt.Sprintf(`SELECT access_key_id, secret_access_key, name, description, active, created_at, last_used_at
 		FROM %s.access_keys WHERE access_key_id = $1`, pq.QuoteIdentifier(s.schema))
 
 	row := s.db.QueryRowContext(ctx, query, accessKeyID)
@@ -1134,7 +1139,7 @@ func (s *PostgreSQLStorage) GetAccessKey(ctx context.Context, accessKeyID string
 }
 
 func (s *PostgreSQLStorage) ListAccessKeys(ctx context.Context) ([]*storage.AccessKey, error) {
-	query := fmt.Sprintf(`SELECT access_key_id, secret_access_key, name, description, active, created_at, last_used_at 
+	query := fmt.Sprintf(`SELECT access_key_id, secret_access_key, name, description, active, created_at, last_used_at
 		FROM %s.access_keys ORDER BY created_at DESC`, pq.QuoteIdentifier(s.schema))
 
 	rows, err := s.db.QueryContext(ctx, query)

@@ -113,8 +113,8 @@ func (h *SMQHandler) handleCreateQueue(w http.ResponseWriter, r *http.Request) {
 		URL:                           fmt.Sprintf("%s/%s", h.baseURL, queueName),
 		Attributes:                    attributes,
 		VisibilityTimeoutSeconds:      30,
-		MessageRetentionPeriod:        1209600, // 14 days
-		MaxReceiveCount:               0,
+		MessageRetentionPeriod:        1209600, // 14 days default
+		MaxReceiveCount:               0,       // maximum receives before DLQ
 		DelaySeconds:                  0,
 		ReceiveMessageWaitTimeSeconds: 0,
 		CreatedAt:                     time.Now(),
@@ -135,6 +135,9 @@ func (h *SMQHandler) handleCreateQueue(w http.ResponseWriter, r *http.Request) {
 			queue.MaxReceiveCount = count
 		}
 	}
+	if val, ok := attributes["DeadLetterQueueName"]; ok {
+		queue.DeadLetterQueueName = val
+	}
 	if val, ok := attributes["DelaySeconds"]; ok {
 		if delay, err := strconv.Atoi(val); err == nil {
 			queue.DelaySeconds = delay
@@ -152,7 +155,6 @@ func (h *SMQHandler) handleCreateQueue(w http.ResponseWriter, r *http.Request) {
 			parts := strings.Split(redrivePolicy.DeadLetterTargetArn, ":")
 			if len(parts) >= 6 {
 				queue.DeadLetterQueueName = parts[5]
-				queue.MaxReceiveCount = redrivePolicy.MaxReceiveCount
 			}
 		}
 	}
@@ -165,6 +167,17 @@ func (h *SMQHandler) handleCreateQueue(w http.ResponseWriter, r *http.Request) {
 	}
 	if val, ok := attributes["FifoThroughputLimit"]; ok {
 		queue.FifoThroughputLimit = val
+	}
+
+	// Generate RedrivePolicy JSON if DLQ is configured
+	if queue.DeadLetterQueueName != "" && queue.MaxReceiveCount > 0 {
+		redrivePolicy := map[string]interface{}{
+			"deadLetterTargetArn": fmt.Sprintf("arn:aws:sqs:us-east-1:123456789012:%s", queue.DeadLetterQueueName),
+			"maxReceiveCount":     queue.MaxReceiveCount,
+		}
+		if policyJSON, err := json.Marshal(redrivePolicy); err == nil {
+			queue.RedrivePolicy = string(policyJSON)
+		}
 	}
 
 	if err := SetupFifoQueue(queue); err != nil {
@@ -1781,7 +1794,8 @@ func (h *SMQHandler) handleAPIListQueues(w http.ResponseWriter, r *http.Request)
 
 func (h *SMQHandler) handleAPICreateQueue(w http.ResponseWriter, r *http.Request) {
 	var request struct {
-		QueueName string `json:"queueName"`
+		QueueName  string            `json:"queueName"`
+		Attributes map[string]string `json:"attributes"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
@@ -1789,9 +1803,66 @@ func (h *SMQHandler) handleAPICreateQueue(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Initialize queue with defaults
 	queue := &storage.Queue{
-		Name:      request.QueueName,
-		CreatedAt: time.Now(),
+		Name:                          request.QueueName,
+		URL:                           h.baseURL + "/" + request.QueueName,
+		Attributes:                    make(map[string]string),
+		VisibilityTimeoutSeconds:      30,      // default
+		MessageRetentionPeriod:        1209600, // 14 days default
+		MaxReceiveCount:               0,       // maximum receives before DLQ
+		DelaySeconds:                  0,
+		ReceiveMessageWaitTimeSeconds: 0,
+		CreatedAt:                     time.Now(),
+	}
+
+	// Process attributes if provided
+	if request.Attributes != nil {
+		if val, ok := request.Attributes["VisibilityTimeout"]; ok {
+			if timeout, err := strconv.Atoi(val); err == nil {
+				queue.VisibilityTimeoutSeconds = timeout
+			}
+		}
+		if val, ok := request.Attributes["MessageRetentionPeriod"]; ok {
+			if retention, err := strconv.Atoi(val); err == nil {
+				queue.MessageRetentionPeriod = retention
+			}
+		}
+		if val, ok := request.Attributes["MaxReceiveCount"]; ok {
+			if count, err := strconv.Atoi(val); err == nil {
+				queue.MaxReceiveCount = count
+			}
+		}
+		if val, ok := request.Attributes["DeadLetterQueueName"]; ok {
+			queue.DeadLetterQueueName = val
+		}
+		if val, ok := request.Attributes["DelaySeconds"]; ok {
+			if delay, err := strconv.Atoi(val); err == nil {
+				queue.DelaySeconds = delay
+			}
+		}
+		if val, ok := request.Attributes["ReceiveMessageWaitTimeSeconds"]; ok {
+			if wait, err := strconv.Atoi(val); err == nil {
+				queue.ReceiveMessageWaitTimeSeconds = wait
+			}
+		}
+		if val, ok := request.Attributes["FifoQueue"]; ok {
+			queue.FifoQueue = (val == "true")
+		}
+		if val, ok := request.Attributes["ContentBasedDeduplication"]; ok {
+			queue.ContentBasedDeduplication = (val == "true")
+		}
+	}
+
+	// Generate RedrivePolicy JSON if DLQ is configured
+	if queue.DeadLetterQueueName != "" && queue.MaxReceiveCount > 0 {
+		redrivePolicy := map[string]interface{}{
+			"deadLetterTargetArn": fmt.Sprintf("arn:aws:sqs:us-east-1:123456789012:%s", queue.DeadLetterQueueName),
+			"maxReceiveCount":     queue.MaxReceiveCount,
+		}
+		if policyJSON, err := json.Marshal(redrivePolicy); err == nil {
+			queue.RedrivePolicy = string(policyJSON)
+		}
 	}
 
 	if err := h.storage.CreateQueue(r.Context(), queue); err != nil {
