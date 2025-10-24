@@ -149,11 +149,37 @@ func (s *SQLiteStorage) CheckForDuplicate(ctx context.Context, queueName, dedupl
 }
 
 func (s *SQLiteStorage) DeleteQueue(ctx context.Context, queueName string) error {
-	_, err := s.db.ExecContext(ctx, "DELETE FROM queues WHERE name = ?", queueName)
+	// Begin transaction for cascade deletion
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("failed to delete queue: %w", err)
+		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	return nil
+	defer tx.Rollback()
+
+	// First, get the DLQ name if it exists
+	var dlqName sql.NullString
+	err = tx.QueryRowContext(ctx, "SELECT dead_letter_queue_name FROM queues WHERE name = ?", queueName).Scan(&dlqName)
+	if err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("failed to get DLQ for queue %s: %w", queueName, err)
+	}
+
+	// Delete the main queue (this will cascade delete its messages due to FK constraint)
+	_, err = tx.ExecContext(ctx, "DELETE FROM queues WHERE name = ?", queueName)
+	if err != nil {
+		return fmt.Errorf("failed to delete queue %s: %w", queueName, err)
+	}
+
+	// If the queue had a DLQ, delete it as well
+	if dlqName.Valid && dlqName.String != "" {
+		_, err = tx.ExecContext(ctx, "DELETE FROM queues WHERE name = ?", dlqName.String)
+		if err != nil {
+			// Don't fail if DLQ doesn't exist or is already deleted
+			// This could happen if the DLQ is shared between multiple queues
+			// or if it was manually deleted before
+		}
+	}
+
+	return tx.Commit()
 }
 
 func (s *SQLiteStorage) GetQueue(ctx context.Context, queueName string) (*storage.Queue, error) {

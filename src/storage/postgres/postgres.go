@@ -188,11 +188,12 @@ func (s *PostgreSQLStorage) GetQueue(ctx context.Context, queueName string) (*st
 	var queue storage.Queue
 	var attributesJSON string
 	var createdAt time.Time
+	var deadLetterQueueName, redrivePolicy sql.NullString
 
 	err := s.db.QueryRowContext(ctx, query, queueName).Scan(
 		&queue.Name, &queue.URL, &attributesJSON, &queue.VisibilityTimeoutSeconds,
 		&queue.MessageRetentionPeriod, &queue.MaxReceiveCount, &queue.DelaySeconds,
-		&queue.ReceiveMessageWaitTimeSeconds, &queue.DeadLetterQueueName, &queue.RedrivePolicy,
+		&queue.ReceiveMessageWaitTimeSeconds, &deadLetterQueueName, &redrivePolicy,
 		&createdAt, &queue.FifoQueue, &queue.ContentBasedDeduplication,
 		&queue.DeduplicationScope, &queue.FifoThroughputLimit)
 
@@ -205,6 +206,13 @@ func (s *PostgreSQLStorage) GetQueue(ctx context.Context, queueName string) (*st
 
 	if err := json.Unmarshal([]byte(attributesJSON), &queue.Attributes); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal attributes: %w", err)
+	}
+
+	if deadLetterQueueName.Valid {
+		queue.DeadLetterQueueName = deadLetterQueueName.String
+	}
+	if redrivePolicy.Valid {
+		queue.RedrivePolicy = redrivePolicy.String
 	}
 
 	queue.CreatedAt = createdAt
@@ -237,11 +245,12 @@ func (s *PostgreSQLStorage) ListQueues(ctx context.Context, prefix string) ([]*s
 		var queue storage.Queue
 		var attributesJSON string
 		var createdAt time.Time
+		var deadLetterQueueName, redrivePolicy sql.NullString
 
 		err := rows.Scan(
 			&queue.Name, &queue.URL, &attributesJSON, &queue.VisibilityTimeoutSeconds,
 			&queue.MessageRetentionPeriod, &queue.MaxReceiveCount, &queue.DelaySeconds,
-			&queue.ReceiveMessageWaitTimeSeconds, &queue.DeadLetterQueueName, &queue.RedrivePolicy,
+			&queue.ReceiveMessageWaitTimeSeconds, &deadLetterQueueName, &redrivePolicy,
 			&createdAt, &queue.FifoQueue, &queue.ContentBasedDeduplication,
 			&queue.DeduplicationScope, &queue.FifoThroughputLimit)
 		if err != nil {
@@ -252,6 +261,13 @@ func (s *PostgreSQLStorage) ListQueues(ctx context.Context, prefix string) ([]*s
 			return nil, fmt.Errorf("failed to unmarshal attributes: %w", err)
 		}
 
+		if deadLetterQueueName.Valid {
+			queue.DeadLetterQueueName = deadLetterQueueName.String
+		}
+		if redrivePolicy.Valid {
+			queue.RedrivePolicy = redrivePolicy.String
+		}
+
 		queue.CreatedAt = createdAt
 		queues = append(queues, &queue)
 	}
@@ -260,9 +276,66 @@ func (s *PostgreSQLStorage) ListQueues(ctx context.Context, prefix string) ([]*s
 }
 
 func (s *PostgreSQLStorage) DeleteQueue(ctx context.Context, queueName string) error {
-	query := fmt.Sprintf(`DELETE FROM %s.queues WHERE name = $1`, pq.QuoteIdentifier(s.schema))
-	_, err := s.db.ExecContext(ctx, query, queueName)
-	return err
+	// Begin transaction for cascade deletion
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// First, get the DLQ name and RedrivePolicy if they exist
+	var dlqName sql.NullString
+	var redrivePolicy sql.NullString
+	query := fmt.Sprintf(`SELECT dead_letter_queue_name, redrive_policy FROM %s.queues WHERE name = $1`, pq.QuoteIdentifier(s.schema))
+	err = tx.QueryRowContext(ctx, query, queueName).Scan(&dlqName, &redrivePolicy)
+	if err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("failed to get DLQ for queue %s: %w", queueName, err)
+	}
+
+	// Determine DLQ name - try direct field first, then parse from RedrivePolicy
+	var dlqToDelete string
+	if dlqName.Valid && dlqName.String != "" {
+		dlqToDelete = dlqName.String
+	} else if redrivePolicy.Valid && redrivePolicy.String != "" {
+		// Parse RedrivePolicy JSON to extract DLQ name
+		var policy struct {
+			DeadLetterTargetArn string `json:"deadLetterTargetArn"`
+		}
+		if err := json.Unmarshal([]byte(redrivePolicy.String), &policy); err == nil && policy.DeadLetterTargetArn != "" {
+			// Extract queue name from ARN (format: arn:aws:sqs:region:account:queuename)
+			parts := strings.Split(policy.DeadLetterTargetArn, ":")
+			if len(parts) >= 6 && parts[5] != "" {
+				dlqToDelete = parts[5]
+			}
+		}
+	}
+
+	// Delete the main queue (this will cascade delete its messages due to FK constraint)
+	result, err := tx.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s.queues WHERE name = $1`, pq.QuoteIdentifier(s.schema)), queueName)
+	if err != nil {
+		return fmt.Errorf("failed to delete queue %s: %w", queueName, err)
+	}
+
+	// Check if the main queue was actually deleted
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("queue %s not found", queueName)
+	}
+
+	// If the queue had a DLQ, delete it as well
+	if dlqToDelete != "" {
+		_, err = tx.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s.queues WHERE name = $1`, pq.QuoteIdentifier(s.schema)), dlqToDelete)
+		if err != nil {
+			// Don't fail if DLQ doesn't exist or is already deleted
+			// This could happen if the DLQ is shared between multiple queues
+			// or if it was manually deleted before
+		}
+	}
+
+	return tx.Commit()
 }
 
 func (s *PostgreSQLStorage) SendMessage(ctx context.Context, message *storage.Message) error {

@@ -156,6 +156,7 @@ func (h *SMQHandler) handleCreateQueue(w http.ResponseWriter, r *http.Request) {
 			if len(parts) >= 6 {
 				queue.DeadLetterQueueName = parts[5]
 			}
+			queue.MaxReceiveCount = redrivePolicy.MaxReceiveCount
 		}
 	}
 
@@ -169,14 +170,16 @@ func (h *SMQHandler) handleCreateQueue(w http.ResponseWriter, r *http.Request) {
 		queue.FifoThroughputLimit = val
 	}
 
-	// Generate RedrivePolicy JSON if DLQ is configured
-	if queue.DeadLetterQueueName != "" && queue.MaxReceiveCount > 0 {
+	// Generate RedrivePolicy JSON if DLQ is configured (and not already set)
+	if queue.RedrivePolicy == "" && queue.DeadLetterQueueName != "" && queue.MaxReceiveCount > 0 {
 		redrivePolicy := map[string]interface{}{
 			"deadLetterTargetArn": fmt.Sprintf("arn:aws:sqs:us-east-1:123456789012:%s", queue.DeadLetterQueueName),
 			"maxReceiveCount":     queue.MaxReceiveCount,
 		}
 		if policyJSON, err := json.Marshal(redrivePolicy); err == nil {
 			queue.RedrivePolicy = string(policyJSON)
+			// Also store in attributes map for GetQueueAttributes
+			queue.Attributes["RedrivePolicy"] = string(policyJSON)
 		}
 	}
 
@@ -662,11 +665,21 @@ func (h *SMQHandler) generateQueueAttributes(ctx context.Context, queue *storage
 	}
 
 	// DLQ attributes
-	if shouldInclude("RedrivePolicy") && queue.RedrivePolicy != "" {
-		attributes = append(attributes, QueueAttribute{
-			Name:  "RedrivePolicy",
-			Value: queue.RedrivePolicy,
-		})
+	if shouldInclude("RedrivePolicy") {
+		if queue.RedrivePolicy != "" {
+			attributes = append(attributes, QueueAttribute{
+				Name:  "RedrivePolicy",
+				Value: queue.RedrivePolicy,
+			})
+		} else {
+			// Check if RedrivePolicy is in the attributes map
+			if redrivePolicy, ok := queue.Attributes["RedrivePolicy"]; ok {
+				attributes = append(attributes, QueueAttribute{
+					Name:  "RedrivePolicy",
+					Value: redrivePolicy,
+				})
+			}
+		}
 	}
 
 	// Encryption attributes (basic support)
@@ -1862,6 +1875,8 @@ func (h *SMQHandler) handleAPICreateQueue(w http.ResponseWriter, r *http.Request
 		}
 		if policyJSON, err := json.Marshal(redrivePolicy); err == nil {
 			queue.RedrivePolicy = string(policyJSON)
+			// Also store in attributes map for GetQueueAttributes
+			queue.Attributes["RedrivePolicy"] = string(policyJSON)
 		}
 	}
 
