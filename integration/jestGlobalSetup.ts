@@ -5,10 +5,8 @@ export default async () => {
   console.log("Starting integration test containers...");
 
   try {
-    // Create a shared network
     const network = await new Network().start();
 
-    // 1. Start PostgreSQL
     console.log("Starting PostgreSQL container...");
     const pgContainer = await new PostgreSqlContainer("postgres:17")
       .withDatabase("simplemessagequeue_test")
@@ -20,16 +18,13 @@ export default async () => {
 
     console.log(`PostgreSQL started on port ${pgContainer.getMappedPort(5432)}`);
 
-    // 2. Build Simple Message Queue from parent directory
     console.log("Building Simple Message Queue container...");
     const smq = await GenericContainer
       .fromDockerfile("../", "Dockerfile") // Build from parent Go project
       .build();
 
-    // 3. Start Simple Message Queue with PostgreSQL connection
     console.log("Starting Simple Message Queue container...");
 
-    // Use internal network connection
     const pgConnectionUrl = `postgres://test_user:test_password@postgres:5432/simplemessagequeue_test?sslmode=disable`;
     console.log("Database URL:", pgConnectionUrl);
 
@@ -46,7 +41,6 @@ export default async () => {
       .withWaitStrategy(Wait.forListeningPorts())
       .start();
 
-    // Wait a moment for the service to fully start
     await new Promise(resolve => setTimeout(resolve, 3000));
 
     const smqPort = smqInstance.getMappedPort(8080);

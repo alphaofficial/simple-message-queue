@@ -12,7 +12,6 @@ func TestDeleteQueueCascadesDLQ(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 
-	// Create a Dead Letter Queue first
 	dlq := &storage.Queue{
 		Name:      "test-dlq",
 		URL:       "http://localhost:9324/test-dlq",
@@ -23,7 +22,6 @@ func TestDeleteQueueCascadesDLQ(t *testing.T) {
 		t.Fatalf("Failed to create DLQ: %v", err)
 	}
 
-	// Create a main queue that uses the DLQ
 	mainQueue := &storage.Queue{
 		Name:                "test-main-queue",
 		URL:                 "http://localhost:9324/test-main-queue",
@@ -36,7 +34,6 @@ func TestDeleteQueueCascadesDLQ(t *testing.T) {
 		t.Fatalf("Failed to create main queue: %v", err)
 	}
 
-	// Add some messages to both queues
 	mainMessage := &storage.Message{
 		ID:        "main-msg-1",
 		QueueName: "test-main-queue",
@@ -59,7 +56,6 @@ func TestDeleteQueueCascadesDLQ(t *testing.T) {
 		t.Fatalf("Failed to send message to DLQ: %v", err)
 	}
 
-	// Verify both queues exist
 	mainQueueCheck, err := store.GetQueue(ctx, "test-main-queue")
 	if err != nil {
 		t.Fatalf("Failed to get main queue: %v", err)
@@ -76,13 +72,11 @@ func TestDeleteQueueCascadesDLQ(t *testing.T) {
 		t.Fatal("DLQ should exist")
 	}
 
-	// Delete the main queue - this should also delete the DLQ
 	err = store.DeleteQueue(ctx, "test-main-queue")
 	if err != nil {
 		t.Fatalf("Failed to delete main queue: %v", err)
 	}
 
-	// Verify main queue is deleted
 	mainQueueCheck, err = store.GetQueue(ctx, "test-main-queue")
 	if err != nil {
 		t.Fatalf("Error checking for deleted main queue: %v", err)
@@ -91,7 +85,6 @@ func TestDeleteQueueCascadesDLQ(t *testing.T) {
 		t.Error("Main queue should be deleted")
 	}
 
-	// Verify DLQ is also deleted (cascade deletion)
 	dlqCheck, err = store.GetQueue(ctx, "test-dlq")
 	if err != nil {
 		t.Fatalf("Error checking for deleted DLQ: %v", err)
@@ -105,7 +98,6 @@ func TestDeleteQueueWithoutDLQ(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 
-	// Create a queue without a DLQ
 	queue := &storage.Queue{
 		Name:      "test-queue-no-dlq",
 		URL:       "http://localhost:9324/test-queue-no-dlq",
@@ -116,7 +108,6 @@ func TestDeleteQueueWithoutDLQ(t *testing.T) {
 		t.Fatalf("Failed to create queue: %v", err)
 	}
 
-	// Add a message to the queue
 	message := &storage.Message{
 		ID:        "msg-1",
 		QueueName: "test-queue-no-dlq",
@@ -128,7 +119,6 @@ func TestDeleteQueueWithoutDLQ(t *testing.T) {
 		t.Fatalf("Failed to send message: %v", err)
 	}
 
-	// Verify queue exists
 	queueCheck, err := store.GetQueue(ctx, "test-queue-no-dlq")
 	if err != nil {
 		t.Fatalf("Failed to get queue: %v", err)
@@ -137,13 +127,11 @@ func TestDeleteQueueWithoutDLQ(t *testing.T) {
 		t.Fatal("Queue should exist")
 	}
 
-	// Delete the queue
 	err = store.DeleteQueue(ctx, "test-queue-no-dlq")
 	if err != nil {
 		t.Fatalf("Failed to delete queue: %v", err)
 	}
 
-	// Verify queue is deleted
 	queueCheck, err = store.GetQueue(ctx, "test-queue-no-dlq")
 	if err != nil {
 		t.Fatalf("Error checking for deleted queue: %v", err)
@@ -157,7 +145,6 @@ func TestDeleteQueueWithNonExistentDLQ(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 
-	// Create a queue that references a non-existent DLQ
 	queue := &storage.Queue{
 		Name:                "test-queue-broken-dlq",
 		URL:                 "http://localhost:9324/test-queue-broken-dlq",
@@ -170,7 +157,6 @@ func TestDeleteQueueWithNonExistentDLQ(t *testing.T) {
 		t.Fatalf("Failed to create queue: %v", err)
 	}
 
-	// Verify queue exists
 	queueCheck, err := store.GetQueue(ctx, "test-queue-broken-dlq")
 	if err != nil {
 		t.Fatalf("Failed to get queue: %v", err)
@@ -179,13 +165,11 @@ func TestDeleteQueueWithNonExistentDLQ(t *testing.T) {
 		t.Fatal("Queue should exist")
 	}
 
-	// Delete the queue - this should not fail even if DLQ doesn't exist
 	err = store.DeleteQueue(ctx, "test-queue-broken-dlq")
 	if err != nil {
 		t.Fatalf("Failed to delete queue with non-existent DLQ: %v", err)
 	}
 
-	// Verify queue is deleted
 	queueCheck, err = store.GetQueue(ctx, "test-queue-broken-dlq")
 	if err != nil {
 		t.Fatalf("Error checking for deleted queue: %v", err)

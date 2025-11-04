@@ -37,7 +37,6 @@ describe("SQS FIFO Queue Operations", () => {
       expect(createResult.QueueUrl).toContain(".fifo");
       createdQueues.push(createResult.QueueUrl!);
 
-      // Verify queue attributes
       const attrsResult = await sqsClient.send(new GetQueueAttributesCommand({
         QueueUrl: createResult.QueueUrl,
         AttributeNames: ["All"]
@@ -104,7 +103,6 @@ describe("SQS FIFO Queue Operations", () => {
         { body: "Third message", order: 3 }
       ];
 
-      // Send messages in order
       for (const msg of messages) {
         await sqsClient.send(new SendMessageCommand({
           QueueUrl: fifoQueueUrl,
@@ -114,7 +112,6 @@ describe("SQS FIFO Queue Operations", () => {
         }));
       }
 
-      // Receive messages and verify order
       const receiveResult = await sqsClient.send(new ReceiveMessageCommand({
         QueueUrl: fifoQueueUrl,
         MaxNumberOfMessages: 3
@@ -122,7 +119,6 @@ describe("SQS FIFO Queue Operations", () => {
 
       expect(receiveResult.Messages).toHaveLength(3);
 
-      // Messages should be received in FIFO order
       expect(receiveResult.Messages![0].Body).toBe("First message");
       expect(receiveResult.Messages![1].Body).toBe("Second message");
       expect(receiveResult.Messages![2].Body).toBe("Third message");
@@ -132,7 +128,6 @@ describe("SQS FIFO Queue Operations", () => {
       const group1 = "independent-group-1";
       const group2 = "independent-group-2";
 
-      // Send messages to different groups in interleaved fashion
       await sqsClient.send(new SendMessageCommand({
         QueueUrl: fifoQueueUrl,
         MessageBody: "Group1-Message1",
@@ -154,7 +149,6 @@ describe("SQS FIFO Queue Operations", () => {
         MessageDeduplicationId: `g1-m2-${Date.now()}`
       }));
 
-      // Receive messages
       const receiveResult = await sqsClient.send(new ReceiveMessageCommand({
         QueueUrl: fifoQueueUrl,
         MaxNumberOfMessages: 3
@@ -162,7 +156,6 @@ describe("SQS FIFO Queue Operations", () => {
 
       expect(receiveResult.Messages).toHaveLength(3);
 
-      // Group 1 messages should maintain order
       const group1Messages = receiveResult.Messages!.filter(m =>
         m.Body?.includes("Group1")
       );
@@ -170,7 +163,6 @@ describe("SQS FIFO Queue Operations", () => {
       expect(group1Messages[0].Body).toBe("Group1-Message1");
       expect(group1Messages[1].Body).toBe("Group1-Message2");
 
-      // Group 2 message should be present
       const group2Messages = receiveResult.Messages!.filter(m =>
         m.Body?.includes("Group2")
       );
@@ -199,7 +191,6 @@ describe("SQS FIFO Queue Operations", () => {
       const deduplicationId = `dedup-test-${Date.now()}`;
       const messageBody = "Duplicate test message";
 
-      // Send the same message twice with same deduplication ID
       const sendResult1 = await sqsClient.send(new SendMessageCommand({
         QueueUrl: fifoQueueUrl,
         MessageBody: messageBody,
@@ -214,11 +205,9 @@ describe("SQS FIFO Queue Operations", () => {
         MessageDeduplicationId: deduplicationId
       }));
 
-      // Both sends should succeed but only one message should be queued
       expect(sendResult1.MessageId).toBeDefined();
       expect(sendResult2.MessageId).toBeDefined();
 
-      // Receive messages - should only get one
       const receiveResult = await sqsClient.send(new ReceiveMessageCommand({
         QueueUrl: fifoQueueUrl,
         MaxNumberOfMessages: 10,
@@ -235,7 +224,6 @@ describe("SQS FIFO Queue Operations", () => {
       const messageGroupId = "different-dedup-group";
       const baseTime = Date.now();
 
-      // Send messages with different deduplication IDs
       await sqsClient.send(new SendMessageCommand({
         QueueUrl: fifoQueueUrl,
         MessageBody: "Message with dedup 1",
@@ -250,7 +238,6 @@ describe("SQS FIFO Queue Operations", () => {
         MessageDeduplicationId: `dedup2-${baseTime}`
       }));
 
-      // Should receive both messages
       const receiveResult = await sqsClient.send(new ReceiveMessageCommand({
         QueueUrl: fifoQueueUrl,
         MaxNumberOfMessages: 2
@@ -275,7 +262,6 @@ describe("SQS FIFO Queue Operations", () => {
           QueueUrl: fifoQueueUrl,
           MessageBody: "Message without dedup ID",
           MessageGroupId: "test-group"
-          // Missing MessageDeduplicationId
         }))
       ).rejects.toThrow();
     });
@@ -301,7 +287,6 @@ describe("SQS FIFO Queue Operations", () => {
       const messageGroupId = "content-dedup-group";
       const messageBody = "Content-based deduplication test";
 
-      // Send the same message twice without explicit deduplication ID
       await sqsClient.send(new SendMessageCommand({
         QueueUrl: contentBasedQueueUrl,
         MessageBody: messageBody,
@@ -314,7 +299,6 @@ describe("SQS FIFO Queue Operations", () => {
         MessageGroupId: messageGroupId
       }));
 
-      // Should only receive one message
       const receiveResult = await sqsClient.send(new ReceiveMessageCommand({
         QueueUrl: contentBasedQueueUrl,
         MaxNumberOfMessages: 10,
@@ -342,7 +326,6 @@ describe("SQS FIFO Queue Operations", () => {
         MessageGroupId: messageGroupId
       }));
 
-      // Should receive both messages
       const receiveResult = await sqsClient.send(new ReceiveMessageCommand({
         QueueUrl: contentBasedQueueUrl,
         MaxNumberOfMessages: 2
@@ -400,7 +383,6 @@ describe("SQS FIFO Queue Operations", () => {
       expect(result.Successful).toHaveLength(3);
       expect(result.Failed || []).toHaveLength(0);
 
-      // Verify messages maintain order
       const receiveResult = await sqsClient.send(new ReceiveMessageCommand({
         QueueUrl: fifoQueueUrl,
         MaxNumberOfMessages: 3
@@ -450,7 +432,6 @@ describe("SQS FIFO Queue Operations", () => {
 
       expect(receiveResult.Messages).toHaveLength(3);
 
-      // Verify group ordering is maintained
       const groupAMessages = receiveResult.Messages!
         .filter(m => m.Body?.includes("Group A"))
         .map(m => m.Body);

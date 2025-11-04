@@ -24,7 +24,6 @@ describe("SQS Batch Operations", () => {
   });
 
   afterEach(async () => {
-    // Clear the queue between tests to ensure isolation
     await purgeQueue(sqsClient, queueUrl);
   });
 
@@ -58,7 +57,6 @@ describe("SQS Batch Operations", () => {
       expect(result.Successful).toHaveLength(3);
       expect(result.Failed || []).toHaveLength(0);
 
-      // Verify each message was sent successfully
       for (let i = 0; i < entries.length; i++) {
         const successful = result.Successful!.find(s => s.Id === entries[i].Id);
         expect(successful).toBeDefined();
@@ -103,7 +101,6 @@ describe("SQS Batch Operations", () => {
       expect(result.Successful).toHaveLength(2);
       expect(result.Failed || []).toHaveLength(0);
 
-      // Verify messages can be received with attributes
       const receiveResult = await sqsClient.send(new ReceiveMessageCommand({
         QueueUrl: queueUrl,
         MaxNumberOfMessages: 2,
@@ -156,7 +153,6 @@ describe("SQS Batch Operations", () => {
 
       expect(result.Successful).toHaveLength(2);
 
-      // Messages should not be immediately available
       const immediateReceive = await sqsClient.send(new ReceiveMessageCommand({
         QueueUrl: queueUrl,
         MaxNumberOfMessages: 10,
@@ -172,7 +168,6 @@ describe("SQS Batch Operations", () => {
 
   describe("DeleteMessageBatch", () => {
     it("should delete multiple messages in a batch", async () => {
-      // First, send some messages
       const sendEntries = Array.from({ length: 3 }, (_, i) => ({
         Id: `delete-test-${i}`,
         MessageBody: `Message to delete ${i + 1}`
@@ -183,7 +178,6 @@ describe("SQS Batch Operations", () => {
         Entries: sendEntries
       }));
 
-      // Receive the messages
       const receiveResult = await sqsClient.send(new ReceiveMessageCommand({
         QueueUrl: queueUrl,
         MaxNumberOfMessages: 3
@@ -191,7 +185,6 @@ describe("SQS Batch Operations", () => {
 
       expect(receiveResult.Messages).toHaveLength(3);
 
-      // Delete the messages in batch
       const deleteEntries = receiveResult.Messages!.map((msg, i) => ({
         Id: `delete-${i}`,
         ReceiptHandle: msg.ReceiptHandle!
@@ -205,7 +198,6 @@ describe("SQS Batch Operations", () => {
       expect(deleteResult.Successful).toHaveLength(3);
       expect(deleteResult.Failed || []).toHaveLength(0);
 
-      // Verify messages are no longer available
       const verifyReceive = await sqsClient.send(new ReceiveMessageCommand({
         QueueUrl: queueUrl,
         MaxNumberOfMessages: 10,
@@ -219,7 +211,6 @@ describe("SQS Batch Operations", () => {
     });
 
     it("should handle partial failures in delete batch", async () => {
-      // Send a message to get a valid receipt handle
       await sqsClient.send(new SendMessageCommand({
         QueueUrl: queueUrl,
         MessageBody: "Valid message for delete"
@@ -232,7 +223,6 @@ describe("SQS Batch Operations", () => {
 
       expect(receiveResult.Messages).toHaveLength(1);
 
-      // Create entries with one valid and one invalid receipt handle
       const deleteEntries = [
         {
           Id: "valid-delete",
@@ -259,7 +249,6 @@ describe("SQS Batch Operations", () => {
 
   describe("ChangeMessageVisibilityBatch", () => {
     it("should change visibility timeout for multiple messages", async () => {
-      // Send messages
       const sendEntries = Array.from({ length: 2 }, (_, i) => ({
         Id: `visibility-test-${i}`,
         MessageBody: `Visibility test message ${i + 1}`
@@ -270,7 +259,6 @@ describe("SQS Batch Operations", () => {
         Entries: sendEntries
       }));
 
-      // Receive messages
       const receiveResult = await sqsClient.send(new ReceiveMessageCommand({
         QueueUrl: queueUrl,
         MaxNumberOfMessages: 2,
@@ -279,7 +267,6 @@ describe("SQS Batch Operations", () => {
 
       expect(receiveResult.Messages).toHaveLength(2);
 
-      // Change visibility timeout to 1 second
       const visibilityEntries = receiveResult.Messages!.map((msg, i) => ({
         Id: `visibility-change-${i}`,
         ReceiptHandle: msg.ReceiptHandle!,
@@ -294,7 +281,6 @@ describe("SQS Batch Operations", () => {
       expect(visibilityResult.Successful).toHaveLength(2);
       expect(visibilityResult.Failed || []).toHaveLength(0);
 
-      // Messages should not be immediately available
       const immediateReceive = await sqsClient.send(new ReceiveMessageCommand({
         QueueUrl: queueUrl,
         MaxNumberOfMessages: 10,
@@ -306,10 +292,8 @@ describe("SQS Batch Operations", () => {
       );
       expect(visibilityMessages).toHaveLength(0);
 
-      // Wait for visibility timeout to expire (1 second + buffer)
       await new Promise(resolve => setTimeout(resolve, 2000));
 
-      // Messages should now be available again
       const delayedReceive = await sqsClient.send(new ReceiveMessageCommand({
         QueueUrl: queueUrl,
         MaxNumberOfMessages: 10
@@ -322,13 +306,11 @@ describe("SQS Batch Operations", () => {
     });
 
     it("should make messages immediately visible with zero timeout", async () => {
-      // Send a message
       await sqsClient.send(new SendMessageCommand({
         QueueUrl: queueUrl,
         MessageBody: "Immediate visibility test"
       }));
 
-      // Receive with long visibility timeout
       const receiveResult = await sqsClient.send(new ReceiveMessageCommand({
         QueueUrl: queueUrl,
         MaxNumberOfMessages: 1,
@@ -337,7 +319,6 @@ describe("SQS Batch Operations", () => {
 
       expect(receiveResult.Messages).toHaveLength(1);
 
-      // Change visibility to 0 (immediate)
       const visibilityResult = await sqsClient.send(new ChangeMessageVisibilityBatchCommand({
         QueueUrl: queueUrl,
         Entries: [{
@@ -349,7 +330,6 @@ describe("SQS Batch Operations", () => {
 
       expect(visibilityResult.Successful).toHaveLength(1);
 
-      // Message should be immediately available
       const immediateReceive = await sqsClient.send(new ReceiveMessageCommand({
         QueueUrl: queueUrl,
         MaxNumberOfMessages: 1
@@ -362,7 +342,6 @@ describe("SQS Batch Operations", () => {
 
   describe("Batch Error Handling", () => {
     it("should handle empty batch requests", async () => {
-      // Empty send batch should fail
       await expect(
         sqsClient.send(new SendMessageBatchCommand({
           QueueUrl: queueUrl,
@@ -370,7 +349,6 @@ describe("SQS Batch Operations", () => {
         }))
       ).rejects.toThrow();
 
-      // Empty delete batch should fail
       await expect(
         sqsClient.send(new DeleteMessageBatchCommand({
           QueueUrl: queueUrl,

@@ -5,14 +5,12 @@
 
 set -e
 
-# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Function to print colored output
 print_status() {
     echo -e "${BLUE}[INFO]${NC} $1"
 }
@@ -29,7 +27,6 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Function to run tests in a specific directory
 run_test_suite() {
     local test_dir=$1
     local suite_name=$2
@@ -52,7 +49,6 @@ main() {
     echo "=========================================="
     echo
 
-    # Check if Go is installed
     if ! command -v go &> /dev/null; then
         print_error "Go is not installed or not in PATH"
         exit 1
@@ -61,18 +57,15 @@ main() {
     print_status "Go version: $(go version)"
     echo
 
-    # Initialize variables to track results
     total_suites=0
     passed_suites=0
     failed_suites=()
 
-    # Test suites to run (test_dir:suite_name pairs)
     test_suites=(
         "unit/api:API Handler"
         "unit/storage/sqlite:SQLite Storage"
     )
 
-    # Run each test suite
     for suite in "${test_suites[@]}"; do
         test_dir="${suite%%:*}"
         suite_name="${suite#*:}"
@@ -87,7 +80,6 @@ main() {
         echo
     done
 
-    # Run all tests together for coverage
     echo "----------------------------------------"
     print_status "Running all tests together..."
     if go test ./unit/... -race -timeout 60s; then
@@ -97,7 +89,6 @@ main() {
     fi
     echo
 
-    # Generate test coverage report
     echo "----------------------------------------"
     print_status "Generating test coverage report..."
     if go test ./unit/... -coverprofile=coverage.out -timeout 60s; then
@@ -105,7 +96,6 @@ main() {
             coverage=$(go tool cover -func=coverage.out | grep total | awk '{print $3}')
             print_success "Test coverage: $coverage"
 
-            # Generate HTML coverage report
             go tool cover -html=coverage.out -o coverage.html
             print_success "HTML coverage report generated: coverage.html"
         fi
@@ -114,7 +104,6 @@ main() {
     fi
     echo
 
-    # Summary
     echo "=========================================="
     echo "              Test Summary"
     echo "=========================================="
@@ -138,7 +127,6 @@ main() {
     fi
 }
 
-# Run specific test suite if argument provided
 if [ $# -eq 1 ]; then
     case $1 in
         "api")

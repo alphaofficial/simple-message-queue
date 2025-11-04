@@ -15,11 +15,9 @@ import (
 )
 
 func TestReceiveMessageVisibilityTimeout(t *testing.T) {
-	// Setup
 	mockStorage := NewMockStorage()
 	handler := api.NewSMQHandler(mockStorage, "http://localhost:9324", "test_admin", "test_password")
 
-	// Create test queue
 	queue := &storage.Queue{
 		Name:                     "test-queue",
 		URL:                      "http://localhost:9324/test-queue",
@@ -28,7 +26,6 @@ func TestReceiveMessageVisibilityTimeout(t *testing.T) {
 	}
 	mockStorage.CreateQueue(context.Background(), queue)
 
-	// Add test message
 	message := &storage.Message{
 		ID:            "test-msg-1",
 		QueueName:     "test-queue",
@@ -78,10 +75,8 @@ func TestReceiveMessageVisibilityTimeout(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Reset mock state
 			mockStorage.lastVisibilityTimeout = -1
 
-			// Create request
 			formData := url.Values{}
 			formData.Set("Action", "ReceiveMessage")
 			formData.Set("QueueUrl", "http://localhost:9324/test-queue")
@@ -92,23 +87,19 @@ func TestReceiveMessageVisibilityTimeout(t *testing.T) {
 			req := httptest.NewRequest("POST", "/", strings.NewReader(formData.Encode()))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-			// Execute request
 			w := httptest.NewRecorder()
 			callSQSHandler(handler, w, req)
 
-			// Verify request was successful
 			if w.Code != http.StatusOK {
 				t.Errorf("Expected status %d, got %d. Body: %s", http.StatusOK, w.Code, w.Body.String())
 				return
 			}
 
-			// Verify that the correct visibility timeout was passed to storage
 			if mockStorage.lastVisibilityTimeout != tt.expectedTimeout {
 				t.Errorf("%s: Expected visibility timeout %d, got %d",
 					tt.description, tt.expectedTimeout, mockStorage.lastVisibilityTimeout)
 			}
 
-			// Verify XML response structure
 			responseBody := w.Body.String()
 			if !strings.Contains(responseBody, "ReceiveMessageResponse") {
 				t.Errorf("Response should contain ReceiveMessageResponse element. Got: %s", responseBody)
@@ -118,11 +109,9 @@ func TestReceiveMessageVisibilityTimeout(t *testing.T) {
 }
 
 func TestReceiveMessageVisibilityTimeoutValidation(t *testing.T) {
-	// Setup
 	mockStorage := NewMockStorage()
 	handler := api.NewSMQHandler(mockStorage, "http://localhost:9324", "test_admin", "test_password")
 
-	// Create test queue
 	queue := &storage.Queue{
 		Name:                     "test-queue",
 		URL:                      "http://localhost:9324/test-queue",
@@ -159,10 +148,8 @@ func TestReceiveMessageVisibilityTimeoutValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Reset mock state
 			mockStorage.lastVisibilityTimeout = -1
 
-			// Create request
 			formData := url.Values{}
 			formData.Set("Action", "ReceiveMessage")
 			formData.Set("QueueUrl", "http://localhost:9324/test-queue")
@@ -171,17 +158,14 @@ func TestReceiveMessageVisibilityTimeoutValidation(t *testing.T) {
 			req := httptest.NewRequest("POST", "/", strings.NewReader(formData.Encode()))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-			// Execute request
 			w := httptest.NewRecorder()
 			callSQSHandler(handler, w, req)
 
-			// Verify request was successful (invalid values should not cause errors)
 			if w.Code != http.StatusOK {
 				t.Errorf("Expected status %d, got %d. Body: %s", http.StatusOK, w.Code, w.Body.String())
 				return
 			}
 
-			// Verify that invalid timeouts fallback to queue default (0)
 			if mockStorage.lastVisibilityTimeout != tt.expectedTimeout {
 				t.Errorf("%s: Expected visibility timeout %d, got %d",
 					tt.description, tt.expectedTimeout, mockStorage.lastVisibilityTimeout)
@@ -191,11 +175,9 @@ func TestReceiveMessageVisibilityTimeoutValidation(t *testing.T) {
 }
 
 func TestReceiveMessageParameterHandling(t *testing.T) {
-	// Setup
 	mockStorage := NewMockStorage()
 	handler := api.NewSMQHandler(mockStorage, "http://localhost:9324", "test_admin", "test_password")
 
-	// Create test queue
 	queue := &storage.Queue{
 		Name:                     "test-queue",
 		URL:                      "http://localhost:9324/test-queue",
@@ -204,7 +186,6 @@ func TestReceiveMessageParameterHandling(t *testing.T) {
 	}
 	mockStorage.CreateQueue(context.Background(), queue)
 
-	// Add test messages
 	for i := 0; i < 5; i++ {
 		message := &storage.Message{
 			ID:            "test-msg-" + strconv.Itoa(i),
@@ -217,10 +198,8 @@ func TestReceiveMessageParameterHandling(t *testing.T) {
 	}
 
 	t.Run("all_parameters_together", func(t *testing.T) {
-		// Reset mock state
 		mockStorage.lastVisibilityTimeout = -1
 
-		// Create request with all parameters
 		formData := url.Values{}
 		formData.Set("Action", "ReceiveMessage")
 		formData.Set("QueueUrl", "http://localhost:9324/test-queue")
@@ -231,22 +210,18 @@ func TestReceiveMessageParameterHandling(t *testing.T) {
 		req := httptest.NewRequest("POST", "/", strings.NewReader(formData.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-		// Execute request
 		w := httptest.NewRecorder()
 		callSQSHandler(handler, w, req)
 
-		// Verify request was successful
 		if w.Code != http.StatusOK {
 			t.Errorf("Expected status %d, got %d. Body: %s", http.StatusOK, w.Code, w.Body.String())
 			return
 		}
 
-		// Verify that the correct visibility timeout was used
 		if mockStorage.lastVisibilityTimeout != 120 {
 			t.Errorf("Expected visibility timeout 120, got %d", mockStorage.lastVisibilityTimeout)
 		}
 
-		// Verify XML response contains messages
 		responseBody := w.Body.String()
 		if !strings.Contains(responseBody, "ReceiveMessageResponse") {
 			t.Errorf("Response should contain ReceiveMessageResponse element")

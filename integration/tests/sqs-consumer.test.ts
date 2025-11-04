@@ -1,7 +1,6 @@
 import {
   SQSClient,
   CreateQueueCommand,
-  DeleteQueueCommand,
   SendMessageCommand,
   SendMessageBatchCommand,
   GetQueueAttributesCommand,
@@ -19,7 +18,6 @@ describe("SQS Consumer Integration Tests", () => {
   });
 
   afterAll(async () => {
-    // Cleanup all created queues
     for (const queueUrl of createdQueues) {
       await cleanupQueue(sqsClient, queueUrl);
     }
@@ -41,13 +39,11 @@ describe("SQS Consumer Integration Tests", () => {
       const messageBody = "Test message for consumer";
       const receivedMessages: string[] = [];
 
-      // Send a test message
       await sqsClient.send(new SendMessageCommand({
         QueueUrl: queueUrl,
         MessageBody: messageBody
       }));
 
-      // Create consumer with timeout to prevent infinite polling
       const consumer = Consumer.create({
         queueUrl,
         sqs: sqsClient,
@@ -58,11 +54,10 @@ describe("SQS Consumer Integration Tests", () => {
         }
       });
 
-      // Start consumer and wait for message processing
       consumer.start();
-      
+
       await new Promise(resolve => setTimeout(resolve, 5000)); // Wait for message processing
-      
+
       consumer.stop();
 
       expect(receivedMessages).toHaveLength(1);
@@ -73,7 +68,6 @@ describe("SQS Consumer Integration Tests", () => {
       const messageCount = 5;
       const receivedMessages: string[] = [];
 
-      // Send multiple test messages
       for (let i = 0; i < messageCount; i++) {
         await sqsClient.send(new SendMessageCommand({
           QueueUrl: queueUrl,
@@ -81,7 +75,6 @@ describe("SQS Consumer Integration Tests", () => {
         }));
       }
 
-      // Create consumer with timeout to prevent infinite polling
       const consumer = Consumer.create({
         queueUrl,
         sqs: sqsClient,
@@ -92,11 +85,10 @@ describe("SQS Consumer Integration Tests", () => {
         }
       });
 
-      // Start consumer and wait for message processing
       consumer.start();
-      
+
       await new Promise(resolve => setTimeout(resolve, 10000)); // Wait for all messages
-      
+
       consumer.stop();
 
       expect(receivedMessages).toHaveLength(messageCount);
@@ -120,14 +112,12 @@ describe("SQS Consumer Integration Tests", () => {
 
       let receivedMessage: any = null;
 
-      // Send message with attributes
       await sqsClient.send(new SendMessageCommand({
         QueueUrl: queueUrl,
         MessageBody: messageBody,
         MessageAttributes: messageAttributes
       }));
 
-      // Create consumer with promise-based completion
       const consumer = Consumer.create({
         queueUrl,
         sqs: sqsClient,
@@ -140,11 +130,10 @@ describe("SQS Consumer Integration Tests", () => {
         }
       });
 
-      // Start consumer and wait for message processing
       consumer.start();
-      
+
       await new Promise(resolve => setTimeout(resolve, 5000));
-      
+
       consumer.stop();
 
       expect(receivedMessage).not.toBeNull();
@@ -172,7 +161,6 @@ describe("SQS Consumer Integration Tests", () => {
       const totalMessages = 9;
       const receivedMessages: string[] = [];
 
-      // Send messages in batch
       const entries = [];
       for (let i = 0; i < totalMessages; i++) {
         entries.push({
@@ -181,7 +169,6 @@ describe("SQS Consumer Integration Tests", () => {
         });
       }
 
-      // Send in batches of 10 (SQS limit)
       for (let i = 0; i < entries.length; i += 10) {
         const batch = entries.slice(i, i + 10);
         await sqsClient.send(new SendMessageBatchCommand({
@@ -190,7 +177,6 @@ describe("SQS Consumer Integration Tests", () => {
         }));
       }
 
-      // Create consumer with batch processing
       const consumer = Consumer.create({
         queueUrl,
         sqs: sqsClient,
@@ -200,11 +186,10 @@ describe("SQS Consumer Integration Tests", () => {
         }
       });
 
-      // Start consumer and wait for message processing
       consumer.start();
-      
+
       await new Promise(resolve => setTimeout(resolve, 5000));
-      
+
       consumer.stop();
 
       expect(receivedMessages).toHaveLength(totalMessages);
@@ -232,13 +217,11 @@ describe("SQS Consumer Integration Tests", () => {
       const errors: Error[] = [];
       const processedMessages: string[] = [];
 
-      // Send test message
       await sqsClient.send(new SendMessageCommand({
         QueueUrl: queueUrl,
         MessageBody: messageBody
       }));
 
-      // Create consumer that throws an error
       const consumer = Consumer.create({
         queueUrl,
         sqs: sqsClient,
@@ -252,7 +235,6 @@ describe("SQS Consumer Integration Tests", () => {
         }
       });
 
-      // Listen for errors
       consumer.on("error", (err) => {
         errors.push(err);
       });
@@ -261,11 +243,10 @@ describe("SQS Consumer Integration Tests", () => {
         errors.push(err);
       });
 
-      // Start consumer and wait for error
       consumer.start();
-      
+
       await new Promise(resolve => setTimeout(resolve, 5000));
-      
+
       consumer.stop();
 
       expect(errors.length).toBeGreaterThanOrEqual(1);
@@ -278,13 +259,11 @@ describe("SQS Consumer Integration Tests", () => {
       let processAttempts = 0;
       const maxAttempts = 2;
 
-      // Send test message
       await sqsClient.send(new SendMessageCommand({
         QueueUrl: queueUrl,
         MessageBody: messageBody
       }));
 
-      // Create consumer that fails first attempt, succeeds second
       const consumer = Consumer.create({
         queueUrl,
         sqs: sqsClient,
@@ -294,16 +273,14 @@ describe("SQS Consumer Integration Tests", () => {
           if (processAttempts < maxAttempts) {
             throw new Error(`Attempt ${processAttempts} failed`);
           }
-          // Success on second attempt
           expect(message.Body).toBe(messageBody);
         }
       });
 
-      // Start consumer and wait for retry
       consumer.start();
-      
+
       await new Promise(resolve => setTimeout(resolve, 15000)); // Wait longer for retry
-      
+
       consumer.stop();
 
       expect(processAttempts).toBe(maxAttempts);
@@ -326,13 +303,11 @@ describe("SQS Consumer Integration Tests", () => {
       const messageBody = "Polling config test";
       const receivedMessages: string[] = [];
 
-      // Send test message
       await sqsClient.send(new SendMessageCommand({
         QueueUrl: queueUrl,
         MessageBody: messageBody
       }));
 
-      // Create consumer with specific polling config
       const consumer = Consumer.create({
         queueUrl,
         sqs: sqsClient,
@@ -343,11 +318,10 @@ describe("SQS Consumer Integration Tests", () => {
         }
       });
 
-      // Start consumer
       consumer.start();
-      
+
       await new Promise(resolve => setTimeout(resolve, 3000));
-      
+
       consumer.stop();
 
       expect(receivedMessages).toHaveLength(1);
@@ -357,7 +331,6 @@ describe("SQS Consumer Integration Tests", () => {
     it("should handle consumer lifecycle events", async () => {
       const events: string[] = [];
 
-      // Create consumer
       const consumer = Consumer.create({
         queueUrl,
         sqs: sqsClient,
@@ -366,12 +339,10 @@ describe("SQS Consumer Integration Tests", () => {
         }
       });
 
-      // Listen for lifecycle events
       consumer.on("started", () => events.push("started"));
       consumer.on("stopped", () => events.push("stopped"));
       consumer.on("empty", () => events.push("empty"));
 
-      // Start and stop consumer
       consumer.start();
       await new Promise(resolve => setTimeout(resolve, 1000));
       consumer.stop();
@@ -379,7 +350,7 @@ describe("SQS Consumer Integration Tests", () => {
 
       expect(events).toContain("started");
       expect(events).toContain("stopped");
-      expect(events).toContain("empty"); // Should be empty since no messages
+      expect(events).toContain("empty");
     });
   });
 
@@ -399,13 +370,11 @@ describe("SQS Consumer Integration Tests", () => {
       const messageBody = "State tracking test";
       const states: string[] = [];
 
-      // Send test message
       await sqsClient.send(new SendMessageCommand({
         QueueUrl: queueUrl,
         MessageBody: messageBody
       }));
 
-      // Create consumer with state tracking
       const consumer = Consumer.create({
         queueUrl,
         sqs: sqsClient,
@@ -416,15 +385,13 @@ describe("SQS Consumer Integration Tests", () => {
         }
       });
 
-      // Listen for events
       consumer.on("message_received", () => states.push("received"));
       consumer.on("message_processed", () => states.push("processed"));
 
-      // Start consumer
       consumer.start();
-      
+
       await new Promise(resolve => setTimeout(resolve, 2000));
-      
+
       consumer.stop();
 
       expect(states).toContain("received");
@@ -438,7 +405,6 @@ describe("SQS Consumer Integration Tests", () => {
       const processedMessages: string[] = [];
       const processingTimes: number[] = [];
 
-      // Send multiple messages
       for (let i = 0; i < messageCount; i++) {
         await sqsClient.send(new SendMessageCommand({
           QueueUrl: queueUrl,
@@ -446,7 +412,6 @@ describe("SQS Consumer Integration Tests", () => {
         }));
       }
 
-      // Create consumer with concurrency
       const consumer = Consumer.create({
         queueUrl,
         sqs: sqsClient,
@@ -455,17 +420,16 @@ describe("SQS Consumer Integration Tests", () => {
           const startTime = Date.now();
           await new Promise(resolve => setTimeout(resolve, 500)); // Simulate processing time
           const endTime = Date.now();
-          
+
           processedMessages.push(message.Body!);
           processingTimes.push(endTime - startTime);
         }
       });
 
-      // Start consumer
       consumer.start();
-      
+
       await new Promise(resolve => setTimeout(resolve, 8000)); // Wait for all messages
-      
+
       consumer.stop();
 
       expect(processedMessages).toHaveLength(messageCount);
@@ -486,7 +450,6 @@ describe("SQS Consumer Integration Tests", () => {
     });
 
     beforeEach(async () => {
-      // Clean queue before each test
       await sqsClient.send(new PurgeQueueCommand({ QueueUrl: queueUrl }));
       await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for purge
     });
@@ -496,7 +459,6 @@ describe("SQS Consumer Integration Tests", () => {
       let initialMessageCount = 0;
       let finalMessageCount = 0;
 
-      // Send test messages
       for (let i = 0; i < messageCount; i++) {
         await sqsClient.send(new SendMessageCommand({
           QueueUrl: queueUrl,
@@ -504,35 +466,28 @@ describe("SQS Consumer Integration Tests", () => {
         }));
       }
 
-      // Wait for messages to be available
       await new Promise(resolve => setTimeout(resolve, 1000));
 
-      // Check initial queue attributes
       const initialAttrs = await sqsClient.send(new GetQueueAttributesCommand({
         QueueUrl: queueUrl,
         AttributeNames: ["ApproximateNumberOfMessages"]
       }));
       initialMessageCount = parseInt(initialAttrs.Attributes!.ApproximateNumberOfMessages || "0");
 
-      // Create consumer to process all messages
       const consumer = Consumer.create({
         queueUrl,
         sqs: sqsClient,
         handleMessage: async (message) => {
-          // Process message
           await new Promise(resolve => setTimeout(resolve, 100));
         }
       });
 
-      // Start consumer and wait for processing
       consumer.start();
       await new Promise(resolve => setTimeout(resolve, 5000));
       consumer.stop();
 
-      // Wait a bit for queue attributes to update
       await new Promise(resolve => setTimeout(resolve, 2000));
 
-      // Check final queue attributes
       const finalAttrs = await sqsClient.send(new GetQueueAttributesCommand({
         QueueUrl: queueUrl,
         AttributeNames: ["ApproximateNumberOfMessages"]

@@ -96,7 +96,6 @@ func TestFifoQueueCreation(t *testing.T) {
 					t.Errorf("Expected success but got error: %s", rr.Body.String())
 				}
 
-				// Verify queue was created with correct FIFO attributes
 				queue, err := mockStorage.GetQueue(context.Background(), tt.queueName)
 				if err != nil || queue == nil {
 					t.Errorf("Queue was not created properly")
@@ -119,7 +118,6 @@ func TestFifoMessageSending(t *testing.T) {
 	mockStorage := NewMockStorage()
 	handler := api.NewSMQHandler(mockStorage, "http://localhost", "", "")
 
-	// Create FIFO queue first
 	fifoQueue := &storage.Queue{
 		Name:                      "test-queue.fifo",
 		URL:                       "http://localhost/test-queue.fifo",
@@ -196,7 +194,6 @@ func TestFifoMessageSending(t *testing.T) {
 					t.Errorf("Expected success but got error: %s", rr.Body.String())
 				}
 
-				// Verify message was stored with FIFO fields
 				messages := mockStorage.messages[fifoQueue.Name]
 				if len(messages) == 0 {
 					t.Errorf("Message was not stored")
@@ -221,7 +218,6 @@ func TestFifoContentBasedDeduplication(t *testing.T) {
 	mockStorage := NewMockStorage()
 	handler := api.NewSMQHandler(mockStorage, "http://localhost", "", "")
 
-	// Create FIFO queue with ContentBasedDeduplication enabled
 	fifoQueue := &storage.Queue{
 		Name:                      "test-content-dedup.fifo",
 		URL:                       "http://localhost/test-content-dedup.fifo",
@@ -233,7 +229,6 @@ func TestFifoContentBasedDeduplication(t *testing.T) {
 	}
 	mockStorage.CreateQueue(context.Background(), fifoQueue)
 
-	// Send first message
 	formData := url.Values{}
 	formData.Set("Action", "SendMessage")
 	formData.Set("QueueUrl", fifoQueue.URL)
@@ -250,7 +245,6 @@ func TestFifoContentBasedDeduplication(t *testing.T) {
 		t.Errorf("First message should succeed: %s", rr.Body.String())
 	}
 
-	// Verify message was stored and has generated deduplication ID
 	messages := mockStorage.messages[fifoQueue.Name]
 	if len(messages) != 1 {
 		t.Errorf("Expected 1 message, got %d", len(messages))
@@ -269,7 +263,6 @@ func TestFifoMessageOrdering(t *testing.T) {
 	mockStorage := NewMockStorage()
 	handler := api.NewSMQHandler(mockStorage, "http://localhost", "", "")
 
-	// Create FIFO queue
 	fifoQueue := &storage.Queue{
 		Name:                      "test-ordering.fifo",
 		URL:                       "http://localhost/test-ordering.fifo",
@@ -281,7 +274,6 @@ func TestFifoMessageOrdering(t *testing.T) {
 	}
 	mockStorage.CreateQueue(context.Background(), fifoQueue)
 
-	// Send messages in order
 	messageGroup := "group1"
 	for i := 1; i <= 5; i++ {
 		formData := url.Values{}
@@ -301,17 +293,14 @@ func TestFifoMessageOrdering(t *testing.T) {
 			t.Errorf("Message %d should succeed: %s", i, rr.Body.String())
 		}
 
-		// Small delay to ensure different sequence numbers
 		time.Sleep(1 * time.Millisecond)
 	}
 
-	// Verify messages are stored in order
 	messages := mockStorage.messages[fifoQueue.Name]
 	if len(messages) != 5 {
 		t.Errorf("Expected 5 messages, got %d", len(messages))
 	}
 
-	// Check sequence numbers are monotonically increasing
 	for i := 1; i < len(messages); i++ {
 		prev := messages[i-1].SequenceNumber
 		curr := messages[i].SequenceNumber
@@ -325,7 +314,6 @@ func TestFifoQueueAttributes(t *testing.T) {
 	mockStorage := NewMockStorage()
 	handler := api.NewSMQHandler(mockStorage, "http://localhost", "", "")
 
-	// Create FIFO queue with specific attributes
 	fifoQueue := &storage.Queue{
 		Name:                      "test-attributes.fifo",
 		URL:                       "http://localhost/test-attributes.fifo",
@@ -337,7 +325,6 @@ func TestFifoQueueAttributes(t *testing.T) {
 	}
 	mockStorage.CreateQueue(context.Background(), fifoQueue)
 
-	// Get queue attributes
 	formData := url.Values{}
 	formData.Set("Action", "GetQueueAttributes")
 	formData.Set("QueueUrl", fifoQueue.URL)
@@ -355,7 +342,6 @@ func TestFifoQueueAttributes(t *testing.T) {
 
 	responseBody := rr.Body.String()
 
-	// Check for FIFO-specific attributes in response
 	expectedAttributes := []string{
 		"FifoQueue",
 		"ContentBasedDeduplication",
@@ -369,7 +355,6 @@ func TestFifoQueueAttributes(t *testing.T) {
 		}
 	}
 
-	// Check specific values
 	if !strings.Contains(responseBody, "<Value>true</Value>") {
 		t.Errorf("FifoQueue should be true")
 	}

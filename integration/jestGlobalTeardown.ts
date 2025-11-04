@@ -18,7 +18,7 @@ export default async (): Promise<void> => {
         await containers.network.stop();
       }
     } catch (error) {
-      console.error("❌ Error during container cleanup:", error);
+      console.error("Error during container cleanup:", error);
     }
   }
 

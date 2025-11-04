@@ -21,10 +21,8 @@ import (
 )
 
 func main() {
-	// Load configuration
 	cfg := config.Load()
 
-	// Initialize storage based on adapter type
 	var storageInstance storage.Storage
 	var err error
 
@@ -65,7 +63,6 @@ func main() {
 		Handler: router,
 	}
 
-	// Start server in goroutine
 	go func() {
 		log.Printf("Starting smq server on port %s", cfg.Port)
 		log.Printf("Base URL: %s", cfg.BaseURL)
@@ -76,17 +73,14 @@ func main() {
 		}
 	}()
 
-	// Start background DLQ processor
 	go startDLQProcessor(storageInstance)
 
-	// Listen for interrupt signal
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	<-c
 
 	log.Println("Shutting down server...")
 
-	// Graceful shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -102,7 +96,6 @@ func startDLQProcessor(storageInstance storage.Storage) {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		// Process expired messages and move to DLQ
 		ctx := context.Background()
 		expiredMessages, err := storageInstance.GetExpiredMessages(ctx)
 		if err != nil {

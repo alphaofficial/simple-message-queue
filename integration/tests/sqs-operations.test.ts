@@ -20,7 +20,6 @@ describe("SQS Core Operations", () => {
   });
 
   afterAll(async () => {
-    // Cleanup all created queues
     for (const queueUrl of createdQueues) {
       await cleanupQueue(sqsClient, queueUrl);
     }
@@ -54,7 +53,6 @@ describe("SQS Core Operations", () => {
       expect(createResult.QueueUrl).toBeDefined();
       createdQueues.push(createResult.QueueUrl!);
 
-      // Verify attributes
       const getAttrsResult = await sqsClient.send(new GetQueueAttributesCommand({
         QueueUrl: createResult.QueueUrl,
         AttributeNames: ["All"]
@@ -85,12 +83,10 @@ describe("SQS Core Operations", () => {
         QueueName: queueName
       }));
 
-      // Delete the queue
       await sqsClient.send(new DeleteQueueCommand({
         QueueUrl: createResult.QueueUrl
       }));
 
-      // Verify it's no longer in the list
       const listResult = await sqsClient.send(new ListQueuesCommand({}));
       expect(listResult.QueueUrls || []).not.toContain(createResult.QueueUrl);
     });
@@ -111,7 +107,6 @@ describe("SQS Core Operations", () => {
     it("should send and receive a message", async () => {
       const messageBody = "Test message from integration test";
 
-      // Send message
       const sendResult = await sqsClient.send(new SendMessageCommand({
         QueueUrl: queueUrl,
         MessageBody: messageBody
@@ -120,7 +115,6 @@ describe("SQS Core Operations", () => {
       expect(sendResult.MessageId).toBeDefined();
       expect(sendResult.MD5OfMessageBody).toBeDefined();
 
-      // Receive message
       const receiveResult = await sqsClient.send(new ReceiveMessageCommand({
         QueueUrl: queueUrl,
         MaxNumberOfMessages: 1
@@ -148,7 +142,6 @@ describe("SQS Core Operations", () => {
         }
       };
 
-      // Send message with attributes
       const sendResult = await sqsClient.send(new SendMessageCommand({
         QueueUrl: queueUrl,
         MessageBody: messageBody,
@@ -157,7 +150,6 @@ describe("SQS Core Operations", () => {
 
       expect(sendResult.MessageId).toBeDefined();
 
-      // Receive message with attributes
       const receiveResult = await sqsClient.send(new ReceiveMessageCommand({
         QueueUrl: queueUrl,
         MaxNumberOfMessages: 1,
@@ -175,13 +167,11 @@ describe("SQS Core Operations", () => {
     it("should delete a message", async () => {
       const messageBody = "Message to be deleted";
 
-      // Send message
       await sqsClient.send(new SendMessageCommand({
         QueueUrl: queueUrl,
         MessageBody: messageBody
       }));
 
-      // Receive message
       const receiveResult = await sqsClient.send(new ReceiveMessageCommand({
         QueueUrl: queueUrl,
         MaxNumberOfMessages: 1
@@ -190,13 +180,11 @@ describe("SQS Core Operations", () => {
       expect(receiveResult.Messages).toHaveLength(1);
       const message = receiveResult.Messages![0];
 
-      // Delete message
       await sqsClient.send(new DeleteMessageCommand({
         QueueUrl: queueUrl,
         ReceiptHandle: message.ReceiptHandle!
       }));
 
-      // Try to receive again - should be empty
       const receiveResult2 = await sqsClient.send(new ReceiveMessageCommand({
         QueueUrl: queueUrl,
         MaxNumberOfMessages: 1,
@@ -210,13 +198,11 @@ describe("SQS Core Operations", () => {
       const messageBody = "Visibility timeout test";
       const visibilityTimeout = 2; // 2 seconds
 
-      // Send message
       await sqsClient.send(new SendMessageCommand({
         QueueUrl: queueUrl,
         MessageBody: messageBody
       }));
 
-      // Receive message with short visibility timeout
       const receiveResult1 = await sqsClient.send(new ReceiveMessageCommand({
         QueueUrl: queueUrl,
         MaxNumberOfMessages: 1,
@@ -225,7 +211,6 @@ describe("SQS Core Operations", () => {
 
       expect(receiveResult1.Messages).toHaveLength(1);
 
-      // Try to receive immediately - should be empty (message not visible)
       const receiveResult2 = await sqsClient.send(new ReceiveMessageCommand({
         QueueUrl: queueUrl,
         MaxNumberOfMessages: 1,
@@ -234,10 +219,8 @@ describe("SQS Core Operations", () => {
 
       expect(receiveResult2.Messages || []).toHaveLength(0);
 
-      // Wait for visibility timeout to expire
       await new Promise(resolve => setTimeout(resolve, (visibilityTimeout + 1) * 1000));
 
-      // Try to receive again - should get the message back
       const receiveResult3 = await sqsClient.send(new ReceiveMessageCommand({
         QueueUrl: queueUrl,
         MaxNumberOfMessages: 1
@@ -282,7 +265,6 @@ describe("SQS Core Operations", () => {
         }
       }));
 
-      // Verify the attribute was set
       const result = await sqsClient.send(new GetQueueAttributesCommand({
         QueueUrl: queueUrl,
         AttributeNames: ["VisibilityTimeout"]
@@ -310,7 +292,6 @@ describe("SQS Core Operations", () => {
       const containers = (global as any).__CONTAINERS__;
       const baseUrl = `http://${containers.smqHost}:${containers.smqPort}`;
 
-      // First, login to get a session cookie
       const loginResponse = await fetch(`${baseUrl}/login`, {
         method: 'POST',
         headers: {
@@ -319,11 +300,9 @@ describe("SQS Core Operations", () => {
         body: 'username=test-access-key&password=test-secret-key'
       });
 
-      // Extract session cookie
       const setCookieHeader = loginResponse.headers.get('set-cookie');
       expect(setCookieHeader).toContain('sqs_session=authenticated');
 
-      // Create an access key using the session cookie
       const createKeyResponse = await fetch(`${baseUrl}/api/auth/access-keys`, {
         method: 'POST',
         headers: {
@@ -344,7 +323,6 @@ describe("SQS Core Operations", () => {
       expect(keyData.accessKeyId).toBeDefined();
       expect(keyData.secretAccessKey).toBeDefined();
 
-      // Now use the created access key for SQS operations
       const client = new SQSClient({
         endpoint: baseUrl,
         credentials: {

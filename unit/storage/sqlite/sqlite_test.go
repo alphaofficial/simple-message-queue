@@ -13,7 +13,6 @@ import (
 )
 
 func setupTestDB(t *testing.T) *sqlite.SQLiteStorage {
-	// Create temporary directory for test database
 	tempDir, err := os.MkdirTemp("", "sqs_test_*")
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
@@ -26,7 +25,6 @@ func setupTestDB(t *testing.T) *sqlite.SQLiteStorage {
 		t.Fatalf("Failed to create SQLite storage: %v", err)
 	}
 
-	// Cleanup function
 	t.Cleanup(func() {
 		store.Close()
 		os.RemoveAll(tempDir)
@@ -39,7 +37,6 @@ func TestReceiveMessagesVisibilityTimeout(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 
-	// Create test queue
 	queue := &storage.Queue{
 		Name:                     "test-queue",
 		URL:                      "http://localhost:9324/test-queue",
@@ -51,7 +48,6 @@ func TestReceiveMessagesVisibilityTimeout(t *testing.T) {
 		t.Fatalf("Failed to create queue: %v", err)
 	}
 
-	// Send test messages
 	messages := []*storage.Message{
 		{
 			ID:        "msg-1",
@@ -108,7 +104,6 @@ func TestReceiveMessagesVisibilityTimeout(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create fresh test messages for each test case to avoid interference
 			testMessages := []*storage.Message{
 				{
 					ID:        fmt.Sprintf("msg-1-%s", tt.name),
@@ -124,7 +119,6 @@ func TestReceiveMessagesVisibilityTimeout(t *testing.T) {
 				},
 			}
 
-			// Send the test messages
 			for _, msg := range testMessages {
 				err := store.SendMessage(ctx, msg)
 				if err != nil {
@@ -132,10 +126,8 @@ func TestReceiveMessagesVisibilityTimeout(t *testing.T) {
 				}
 			}
 
-			// Record time before receiving messages
 			startTime := time.Now()
 
-			// Receive messages with specific visibility timeout
 			receivedMessages, err := store.ReceiveMessages(ctx, "test-queue", 10, 0, tt.visibilityTimeout)
 			if err != nil {
 				t.Fatalf("Failed to receive messages: %v", err)
@@ -145,12 +137,9 @@ func TestReceiveMessagesVisibilityTimeout(t *testing.T) {
 				t.Fatalf("Expected to receive messages, got none")
 			}
 
-			// Verify that visibility timeout is set correctly on received messages
 			for i, msg := range receivedMessages {
-				// Calculate the actual timeout duration
 				actualDuration := msg.VisibilityTimeout.Sub(startTime)
 
-				// Allow for small timing differences (up to 1 second)
 				timeDiff := actualDuration - tt.expectedDuration
 				if timeDiff < 0 {
 					timeDiff = -timeDiff
@@ -161,18 +150,15 @@ func TestReceiveMessagesVisibilityTimeout(t *testing.T) {
 						tt.description, i, tt.expectedDuration, actualDuration, timeDiff)
 				}
 
-				// Verify that message has been marked as received
 				if msg.ReceiveCount == 0 {
 					t.Errorf("Message receive count should be incremented")
 				}
 
-				// Verify receipt handle was updated
 				if msg.ReceiptHandle == "" {
 					t.Errorf("Message should have receipt handle")
 				}
 			}
 
-			// Try to receive again - messages should be invisible
 			invisibleMessages, err := store.ReceiveMessages(ctx, "test-queue", 10, 0, tt.visibilityTimeout)
 			if err != nil {
 				t.Fatalf("Failed to receive messages on second attempt: %v", err)
@@ -189,7 +175,6 @@ func TestReceiveMessagesVisibilityTimeoutInDatabase(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 
-	// Create test queue
 	queue := &storage.Queue{
 		Name:                     "test-queue",
 		URL:                      "http://localhost:9324/test-queue",
@@ -201,7 +186,6 @@ func TestReceiveMessagesVisibilityTimeoutInDatabase(t *testing.T) {
 		t.Fatalf("Failed to create queue: %v", err)
 	}
 
-	// Send test message
 	message := &storage.Message{
 		ID:        "msg-1",
 		QueueName: "test-queue",
@@ -213,7 +197,6 @@ func TestReceiveMessagesVisibilityTimeoutInDatabase(t *testing.T) {
 		t.Fatalf("Failed to send message: %v", err)
 	}
 
-	// Receive message with custom visibility timeout
 	visibilityTimeout := 300 // 5 minutes
 	startTime := time.Now()
 
@@ -228,49 +211,6 @@ func TestReceiveMessagesVisibilityTimeoutInDatabase(t *testing.T) {
 
 	receivedMessage := receivedMessages[0]
 
-	// TODO: Direct database access needs refactoring for proper testing
-	// This section commented out as it accesses unexported fields
-	/*
-		// Verify database state by querying directly
-		var dbVisibilityTimeout time.Time
-		var receiveCount int
-		var receiptHandle string
-
-		query := `SELECT visibility_timeout, receive_count, receipt_handle FROM messages WHERE id = ?`
-		row := store.db.QueryRow(query, receivedMessage.ID)
-		err = row.Scan(&dbVisibilityTimeout, &receiveCount, &receiptHandle)
-		if err != nil {
-			t.Fatalf("Failed to query database: %v", err)
-		}
-
-		// Verify visibility timeout in database matches expected duration
-		expectedTimeout := startTime.Add(time.Duration(visibilityTimeout) * time.Second)
-		timeDiff := dbVisibilityTimeout.Sub(expectedTimeout)
-		if timeDiff < 0 {
-			timeDiff = -timeDiff
-		}
-
-		if timeDiff > time.Second {
-			t.Errorf("Database visibility timeout mismatch. Expected ~%v, got %v (diff: %v)",
-				expectedTimeout, dbVisibilityTimeout, timeDiff)
-		}
-
-		// Verify other fields were updated correctly
-		if receiveCount != 1 {
-			t.Errorf("Expected receive count 1, got %d", receiveCount)
-		}
-
-		if receiptHandle == "" {
-			t.Error("Receipt handle should not be empty")
-		}
-
-		if receiptHandle != receivedMessage.ReceiptHandle {
-			t.Errorf("Receipt handle mismatch. Message: %s, Database: %s",
-				receivedMessage.ReceiptHandle, receiptHandle)
-		}
-	*/
-
-	// Basic verification that we got the message back
 	if receivedMessage.ID != message.ID {
 		t.Errorf("Expected message ID %s, got %s", message.ID, receivedMessage.ID)
 	}
@@ -279,7 +219,6 @@ func TestReceiveMessagesVisibilityTimeoutInDatabase(t *testing.T) {
 		t.Error("Receipt handle should not be empty")
 	}
 
-	// Verify visibility timeout was properly set (message should be returned from storage)
 	expectedTimeout := startTime.Add(time.Duration(visibilityTimeout) * time.Second)
 	timeDiff := receivedMessage.VisibilityTimeout.Sub(expectedTimeout)
 	if timeDiff < 0 {
@@ -296,7 +235,6 @@ func TestReceiveMessagesQueueDefault(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 
-	// Create test queue with custom default visibility timeout
 	queue := &storage.Queue{
 		Name:                     "test-queue",
 		URL:                      "http://localhost:9324/test-queue",
@@ -308,7 +246,6 @@ func TestReceiveMessagesQueueDefault(t *testing.T) {
 		t.Fatalf("Failed to create queue: %v", err)
 	}
 
-	// Send test message
 	message := &storage.Message{
 		ID:        "msg-1",
 		QueueName: "test-queue",
@@ -320,7 +257,6 @@ func TestReceiveMessagesQueueDefault(t *testing.T) {
 		t.Fatalf("Failed to send message: %v", err)
 	}
 
-	// Receive message without specifying visibility timeout (should use queue default)
 	startTime := time.Now()
 	receivedMessages, err := store.ReceiveMessages(ctx, "test-queue", 1, 0, 0) // 0 = use queue default
 	if err != nil {
@@ -331,8 +267,6 @@ func TestReceiveMessagesQueueDefault(t *testing.T) {
 		t.Fatalf("Expected 1 message, got %d", len(receivedMessages))
 	}
 
-	// Should use the hardcoded 30 second default, not the queue's VisibilityTimeoutSeconds
-	// This matches the current implementation
 	expectedDuration := 30 * time.Second
 	actualDuration := receivedMessages[0].VisibilityTimeout.Sub(startTime)
 
@@ -350,7 +284,6 @@ func TestReceiveMessagesEmptyQueue(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 
-	// Create test queue but don't add messages
 	queue := &storage.Queue{
 		Name:                     "empty-queue",
 		URL:                      "http://localhost:9324/empty-queue",
@@ -362,7 +295,6 @@ func TestReceiveMessagesEmptyQueue(t *testing.T) {
 		t.Fatalf("Failed to create queue: %v", err)
 	}
 
-	// Try to receive messages from empty queue
 	receivedMessages, err := store.ReceiveMessages(ctx, "empty-queue", 10, 0, 60)
 	if err != nil {
 		t.Fatalf("Failed to receive messages from empty queue: %v", err)
@@ -377,7 +309,6 @@ func TestReceiveMessagesMaxMessages(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 
-	// Create test queue
 	queue := &storage.Queue{
 		Name:                     "test-queue",
 		URL:                      "http://localhost:9324/test-queue",
@@ -389,7 +320,6 @@ func TestReceiveMessagesMaxMessages(t *testing.T) {
 		t.Fatalf("Failed to create queue: %v", err)
 	}
 
-	// Send 10 test messages
 	for i := 0; i < 10; i++ {
 		message := &storage.Message{
 			ID:        "msg-" + string(rune(i+'0')),
@@ -403,7 +333,6 @@ func TestReceiveMessagesMaxMessages(t *testing.T) {
 		}
 	}
 
-	// Test different maxMessages values
 	tests := []struct {
 		name              string
 		maxMessages       int
@@ -442,7 +371,6 @@ func TestReceiveMessagesMaxMessages(t *testing.T) {
 				t.Errorf("Expected %d messages, got %d", tt.expectedCount, len(receivedMessages))
 			}
 
-			// Verify all messages have correct visibility timeout
 			expectedDuration := time.Duration(tt.visibilityTimeout) * time.Second
 			for i, msg := range receivedMessages {
 				actualDuration := msg.VisibilityTimeout.Sub(startTime)

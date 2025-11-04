@@ -9,7 +9,6 @@ import (
 	"simple-message-queue/src/storage"
 )
 
-// Mock storage for testing
 type MockStorage struct {
 	queues                map[string]*storage.Queue
 	messages              map[string][]*storage.Message
@@ -68,7 +67,6 @@ func (m *MockStorage) SendMessageBatch(ctx context.Context, messages []*storage.
 }
 
 func (m *MockStorage) ReceiveMessages(ctx context.Context, queueName string, maxMessages int, waitTimeSeconds int, visibilityTimeout int) ([]*storage.Message, error) {
-	// Store the visibility timeout for testing
 	m.lastVisibilityTimeout = visibilityTimeout
 
 	messages := m.messages[queueName]
@@ -81,19 +79,16 @@ func (m *MockStorage) ReceiveMessages(ctx context.Context, queueName string, max
 
 	// Find messages that are currently visible (not in flight)
 	for _, msg := range messages {
-		// Skip messages that are still in visibility timeout
 		if msg.VisibleAt != nil && now.Before(*msg.VisibleAt) {
 			continue
 		}
 		availableMessages = append(availableMessages, msg)
 	}
 
-	// Return up to maxMessages from available messages
 	if len(availableMessages) > maxMessages {
 		availableMessages = availableMessages[:maxMessages]
 	}
 
-	// Set visibility timeout on returned messages and update VisibleAt
 	timeoutDuration := 30 // default
 	if visibilityTimeout > 0 {
 		timeoutDuration = visibilityTimeout
@@ -198,6 +193,5 @@ func (m *MockStorage) RedriveMessageBatch(ctx context.Context, dlqName string, m
 }
 
 func (m *MockStorage) GetSourceQueueForDLQ(ctx context.Context, dlqName string) (string, error) {
-	// Mock implementation - return empty string if no source queue found
 	return "", nil
 }

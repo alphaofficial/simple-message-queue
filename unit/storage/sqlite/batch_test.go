@@ -12,7 +12,6 @@ func TestSendMessageBatch(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 
-	// Create test queue
 	queue := &storage.Queue{
 		Name:      "test-batch-queue",
 		URL:       "http://localhost:9324/test-batch-queue",
@@ -23,7 +22,6 @@ func TestSendMessageBatch(t *testing.T) {
 		t.Fatalf("Failed to create queue: %v", err)
 	}
 
-	// Create batch of messages
 	messages := []*storage.Message{
 		{
 			ID:        "batch-msg-1",
@@ -45,13 +43,11 @@ func TestSendMessageBatch(t *testing.T) {
 		},
 	}
 
-	// Send messages in batch
 	err = store.SendMessageBatch(ctx, messages)
 	if err != nil {
 		t.Fatalf("Failed to send message batch: %v", err)
 	}
 
-	// Verify messages were stored
 	allMessages, err := store.GetInFlightMessages(ctx, "test-batch-queue")
 	if err != nil {
 		t.Fatalf("Failed to get messages: %v", err)
@@ -61,7 +57,6 @@ func TestSendMessageBatch(t *testing.T) {
 		t.Errorf("Expected 3 messages, got %d", len(allMessages))
 	}
 
-	// Verify message content
 	expectedBodies := map[string]string{
 		"batch-msg-1": "Batch message 1",
 		"batch-msg-2": "Batch message 2",
@@ -89,7 +84,6 @@ func TestDeleteMessageBatch(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 
-	// Create test queue
 	queue := &storage.Queue{
 		Name:      "test-delete-batch-queue",
 		URL:       "http://localhost:9324/test-delete-batch-queue",
@@ -100,7 +94,6 @@ func TestDeleteMessageBatch(t *testing.T) {
 		t.Fatalf("Failed to create queue: %v", err)
 	}
 
-	// Create and send test messages
 	messages := []*storage.Message{
 		{
 			ID:            "del-msg-1",
@@ -132,7 +125,6 @@ func TestDeleteMessageBatch(t *testing.T) {
 		}
 	}
 
-	// Verify initial count
 	allMessages, err := store.GetInFlightMessages(ctx, "test-delete-batch-queue")
 	if err != nil {
 		t.Fatalf("Failed to get initial messages: %v", err)
@@ -141,14 +133,12 @@ func TestDeleteMessageBatch(t *testing.T) {
 		t.Fatalf("Expected 3 initial messages, got %d", len(allMessages))
 	}
 
-	// Delete messages 1 and 3 in batch
 	receiptHandles := []string{"receipt-handle-1", "receipt-handle-3"}
 	err = store.DeleteMessageBatch(ctx, "test-delete-batch-queue", receiptHandles)
 	if err != nil {
 		t.Fatalf("Failed to delete message batch: %v", err)
 	}
 
-	// Verify remaining messages
 	remainingMessages, err := store.GetInFlightMessages(ctx, "test-delete-batch-queue")
 	if err != nil {
 		t.Fatalf("Failed to get remaining messages: %v", err)
@@ -173,7 +163,6 @@ func TestChangeMessageVisibilityBatch(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 
-	// Create test queue
 	queue := &storage.Queue{
 		Name:      "test-visibility-batch-queue",
 		URL:       "http://localhost:9324/test-visibility-batch-queue",
@@ -184,7 +173,6 @@ func TestChangeMessageVisibilityBatch(t *testing.T) {
 		t.Fatalf("Failed to create queue: %v", err)
 	}
 
-	// Create test messages
 	messages := []*storage.Message{
 		{
 			ID:            "vis-msg-1",
@@ -209,7 +197,6 @@ func TestChangeMessageVisibilityBatch(t *testing.T) {
 		}
 	}
 
-	// Create visibility entries for batch update
 	visibilityEntries := []storage.VisibilityEntry{
 		{
 			ReceiptHandle:     "vis-receipt-1",
@@ -221,21 +208,16 @@ func TestChangeMessageVisibilityBatch(t *testing.T) {
 		},
 	}
 
-	// Update visibility in batch
 	err = store.ChangeMessageVisibilityBatch(ctx, "test-visibility-batch-queue", visibilityEntries)
 	if err != nil {
 		t.Fatalf("Failed to change message visibility batch: %v", err)
 	}
-
-	// Verify the operation completed successfully by checking there are no errors
-	// The actual visibility timeout values are verified in the individual message visibility tests
 }
 
 func TestBatchOperationTransactions(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 
-	// Create test queue
 	queue := &storage.Queue{
 		Name:      "test-transaction-queue",
 		URL:       "http://localhost:9324/test-transaction-queue",
@@ -247,7 +229,6 @@ func TestBatchOperationTransactions(t *testing.T) {
 	}
 
 	t.Run("empty_batch_operations", func(t *testing.T) {
-		// Test empty batch operations don't fail
 		err := store.SendMessageBatch(ctx, []*storage.Message{})
 		if err != nil {
 			t.Errorf("Empty SendMessageBatch should not fail: %v", err)
@@ -265,7 +246,6 @@ func TestBatchOperationTransactions(t *testing.T) {
 	})
 
 	t.Run("large_batch_operations", func(t *testing.T) {
-		// Test with maximum batch size (10 items)
 		var messages []*storage.Message
 		var receiptHandles []string
 		var visibilityEntries []storage.VisibilityEntry
@@ -286,13 +266,11 @@ func TestBatchOperationTransactions(t *testing.T) {
 			})
 		}
 
-		// Send large batch
 		err := store.SendMessageBatch(ctx, messages)
 		if err != nil {
 			t.Fatalf("Failed to send large message batch: %v", err)
 		}
 
-		// Verify all messages were sent
 		allMessages, err := store.GetInFlightMessages(ctx, "test-transaction-queue")
 		if err != nil {
 			t.Fatalf("Failed to get messages: %v", err)
@@ -302,19 +280,16 @@ func TestBatchOperationTransactions(t *testing.T) {
 			t.Errorf("Expected 10 messages, got %d", len(allMessages))
 		}
 
-		// Test large visibility batch
 		err = store.ChangeMessageVisibilityBatch(ctx, "test-transaction-queue", visibilityEntries)
 		if err != nil {
 			t.Fatalf("Failed to change visibility for large batch: %v", err)
 		}
 
-		// Test large delete batch
 		err = store.DeleteMessageBatch(ctx, "test-transaction-queue", receiptHandles)
 		if err != nil {
 			t.Fatalf("Failed to delete large message batch: %v", err)
 		}
 
-		// Verify all messages were deleted
 		remainingMessages, err := store.GetInFlightMessages(ctx, "test-transaction-queue")
 		if err != nil {
 			t.Fatalf("Failed to get remaining messages: %v", err)

@@ -14,11 +14,9 @@ import (
 )
 
 func TestVisibilityTimeoutSimple(t *testing.T) {
-	// Setup fresh mock storage
 	mockStorage := NewMockStorage()
 	handler := api.NewSMQHandler(mockStorage, "http://localhost:9324", "test_admin", "test_password")
 
-	// Create test queue
 	queue := &storage.Queue{
 		Name:                     "simple-test-queue",
 		URL:                      "http://localhost:9324/simple-test-queue",
@@ -30,7 +28,6 @@ func TestVisibilityTimeoutSimple(t *testing.T) {
 		t.Fatalf("Failed to create queue: %v", err)
 	}
 
-	// Add a test message
 	message := &storage.Message{
 		ID:            "simple-msg-1",
 		QueueName:     "simple-test-queue",
@@ -43,7 +40,6 @@ func TestVisibilityTimeoutSimple(t *testing.T) {
 		t.Fatalf("Failed to send message: %v", err)
 	}
 
-	// Verify message was stored
 	messages := mockStorage.messages["simple-test-queue"]
 	if len(messages) != 1 {
 		t.Fatalf("Expected 1 message in storage, got %d", len(messages))
@@ -51,7 +47,6 @@ func TestVisibilityTimeoutSimple(t *testing.T) {
 
 	t.Logf("Message in storage: ID=%s, Body=%s", messages[0].ID, messages[0].Body)
 
-	// Test ReceiveMessage with custom visibility timeout
 	formData := url.Values{}
 	formData.Set("Action", "ReceiveMessage")
 	formData.Set("QueueUrl", "http://localhost:9324/simple-test-queue")
@@ -60,7 +55,6 @@ func TestVisibilityTimeoutSimple(t *testing.T) {
 	req := httptest.NewRequest("POST", "/", strings.NewReader(formData.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	// Execute request
 	w := httptest.NewRecorder()
 	callSQSHandler(handler, w, req)
 
@@ -68,22 +62,18 @@ func TestVisibilityTimeoutSimple(t *testing.T) {
 	t.Logf("Response Body: %s", w.Body.String())
 	t.Logf("Mock storage lastVisibilityTimeout: %d", mockStorage.lastVisibilityTimeout)
 
-	// Verify basic functionality
 	if w.Code != http.StatusOK {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 
-	// Check if visibility timeout was passed to storage
 	if mockStorage.lastVisibilityTimeout != 120 {
 		t.Errorf("Expected visibility timeout 120, got %d", mockStorage.lastVisibilityTimeout)
 	}
 
-	// Check response contains message data
 	responseBody := w.Body.String()
 	if strings.Contains(responseBody, "ReceiveMessageResponse") {
 		t.Logf("SUCCESS: Found ReceiveMessageResponse in response")
 
-		// Check if message body is present
 		if strings.Contains(responseBody, "simple test message") {
 			t.Logf("SUCCESS: Found message body in response")
 		} else {
@@ -98,7 +88,6 @@ func TestReceiveMessageDebug(t *testing.T) {
 	mockStorage := NewMockStorage()
 	handler := api.NewSMQHandler(mockStorage, "http://localhost:9324", "test_admin", "test_password")
 
-	// Create queue
 	queue := &storage.Queue{
 		Name:      "debug-queue",
 		URL:       "http://localhost:9324/debug-queue",
@@ -106,7 +95,6 @@ func TestReceiveMessageDebug(t *testing.T) {
 	}
 	mockStorage.CreateQueue(context.Background(), queue)
 
-	// Add message
 	message := &storage.Message{
 		ID:        "debug-msg",
 		QueueName: "debug-queue",
@@ -115,7 +103,6 @@ func TestReceiveMessageDebug(t *testing.T) {
 	}
 	mockStorage.SendMessage(context.Background(), message)
 
-	// Verify the mock storage ReceiveMessages method works directly
 	receivedMessages, err := mockStorage.ReceiveMessages(context.Background(), "debug-queue", 1, 0, 60)
 	if err != nil {
 		t.Fatalf("Direct ReceiveMessages call failed: %v", err)
@@ -127,7 +114,6 @@ func TestReceiveMessageDebug(t *testing.T) {
 			receivedMessages[0].ID, receivedMessages[0].Body, receivedMessages[0].VisibilityTimeout)
 	}
 
-	// Now test via HTTP handler
 	formData := url.Values{}
 	formData.Set("Action", "ReceiveMessage")
 	formData.Set("QueueUrl", "http://localhost:9324/debug-queue")
